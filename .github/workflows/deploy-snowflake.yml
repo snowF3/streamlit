@@ -5,14 +5,16 @@ on:
     branches:
       - snowflake-dev
       - snowflake-prod
+      - snowflake-f1
+      - snowflake-f2
+      - snowflake-f3
 
 jobs:
   snowflake-fetch:
     runs-on: ubuntu-latest
     steps:
       - name: Install Snowflake CLI
-        run: |
-          pip install snowflake-connector-python
+        run: pip install snowflake-connector-python
 
       - name: Fetch Git Repository in Snowflake
         env:
@@ -29,9 +31,8 @@ jobs:
               warehouse='COMPUTE_WH'
           )
           cur = conn.cursor()
-          cur.execute('ALTER GIT REPOSITORY \"USER\$SAMUEL918\".PUBLIC.snowf3_streamlit FETCH')
+          cur.execute('ALTER GIT REPOSITORY STREAMLIT_APPS.PUBLIC.SNOWF3_STREAMLIT FETCH')
           print('✅ Snowflake Git Repository fetched successfully')
           cur.close()
           conn.close()
           "
-# trigger 1775660292
