@@ -312,7 +312,7 @@ with col_left:
                 f'</div>',
                 unsafe_allow_html=True,
             )
-            if st.button("ㅤ", key=f"sig_{global_idx}", use_container_width=True, type="tertiary"):
+            if st.button("ㅤ", key=f"sig_{global_idx}", use_container_width=True, type="secondary"):
                 st.session_state.selected_signal_idx = global_idx
                 st.rerun()
 
@@ -457,7 +457,7 @@ with col_mid:
                 f'</div>',
                 unsafe_allow_html=True,
             )
-            if st.button("ㅤ", key=f"rel_{ri}", use_container_width=True, type="tertiary"):
+            if st.button("ㅤ", key=f"rel_{ri}", use_container_width=True, type="secondary"):
                 idx = signals.index(rel) if rel in signals else None
                 if idx is not None:
                     st.session_state.selected_signal_idx = idx
