@@ -10,18 +10,27 @@ jobs:
   snowflake-fetch:
     runs-on: ubuntu-latest
     steps:
-      - name: Install SnowSQL
+      - name: Install Snowflake CLI
         run: |
-          curl -O https://sfc-repo.snowflakecomputing.com/snowsql/bootstrap/1.3/linux_x86_64/snowsql-1.3.4-linux_x86_64.bash
-          SNOWSQL_DEST=~/bin SNOWSQL_LOGIN_SHELL=~/.profile bash snowsql-1.3.4-linux_x86_64.bash
+          pip install snowflake-connector-python
 
       - name: Fetch Git Repository in Snowflake
         env:
-          SNOWSQL_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-          SNOWSQL_USER: ${{ secrets.SNOWFLAKE_USER }}
-          SNOWSQL_PWD: ${{ secrets.SNOWFLAKE_PASSWORD }}
-          SNOWSQL_WAREHOUSE: COMPUTE_WH
+          SF_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SF_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SF_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
         run: |
-          ~/bin/snowsql -q 'ALTER GIT REPOSITORY "USER\$SAMUEL918".PUBLIC.snowf3_streamlit FETCH;'
-          echo "✅ Snowflake Git Repository fetched successfully"
-# CI/CD test 2026년  4월  8일 수요일 23시 54분 48초 KST
+          python3 -c "
+          import snowflake.connector
+          conn = snowflake.connector.connect(
+              account='${SF_ACCOUNT}',
+              user='${SF_USER}',
+              password='${SF_PASSWORD}',
+              warehouse='COMPUTE_WH'
+          )
+          cur = conn.cursor()
+          cur.execute('ALTER GIT REPOSITORY \"USER\$SAMUEL918\".PUBLIC.snowf3_streamlit FETCH')
+          print('✅ Snowflake Git Repository fetched successfully')
+          cur.close()
+          conn.close()
+          "
