@@ -292,7 +292,7 @@ with tab_twin:
         map_style="dark",
     )
 
-    st.pydeck_chart(deck, height=600)
+    st.pydeck_chart(deck)
 
     col_info1, col_info2, col_info3 = st.columns(3)
     with col_info1:

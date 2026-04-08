@@ -157,7 +157,7 @@ with col1:
         map_provider="carto",
         map_style="light",
     )
-    st.pydeck_chart(deck, height=600)
+    st.pydeck_chart(deck)
 
 with col2:
     st.subheader("📊 Top 10")

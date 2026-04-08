@@ -139,7 +139,7 @@ with col1:
         tooltip={"text": "{properties.display_name}\n핫플 스코어: {properties.hotplace_score}"},
         map_provider="carto", map_style="light",
     )
-    st.pydeck_chart(deck, height=500)
+    st.pydeck_chart(deck)
 
 with col2:
     st.subheader("📊 Top 20 핫플 동네")
