@@ -422,7 +422,7 @@ with tab_sim:
             st.metric("🏖️ 주말 비율", f"평일 대비 {weekend_ratio*100:.0f}%")
 
         st.subheader("⏰ 시간대별 상세")
-        st.dataframe(results_df, use_container_width=True, hide_index=True)
+        st.dataframe(results_df.reset_index(drop=True), use_container_width=True)
 
         # 인사이트
         st.subheader("💡 AI 인사이트")
