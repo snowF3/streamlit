@@ -20,9 +20,9 @@ from data_loader import (
 from charts import TIME_SLOT_KOR, LIFESTYLE_KOR, CATEGORY_KOR
 from chat_ui import render_chat_panel
 
-st.set_page_config(page_title="디지털 트윈", page_icon="🌆", layout="wide")
-st.title("🌆 디지털 트윈 — 살아있는 서울")
-st.caption("데이터 범위: 서울 중구 · 영등포구 · 서초구 (118개 법정동)")
+st.set_page_config(page_title="디지털 트윈 ", page_icon="🌆", layout="wide")
+st.title("🌆 디지털 트윈 test 기모찌 — 살아있는 서울")
+st.caption("데이터 범위 test 기모찌: 서울 중구 · 영등포구 · 서초구 (118개 법정동)")
 
 # ── 색상 팔레트 (라이프스타일별) ──
 LIFESTYLE_COLORS = {
