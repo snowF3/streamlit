@@ -3,6 +3,12 @@
 """
 import streamlit as st
 import pandas as pd
+
+def _container(**kwargs):
+    try:
+        return st.container(**kwargs)
+    except TypeError:
+        return st.container()
 import plotly.graph_objects as go
 import sys
 from pathlib import Path
@@ -188,7 +194,7 @@ if not hp_until.empty:
 # ═══════════════════════════════════════
 # 요약 지표 (전월대비 + 구 평균 대비)
 # ═══════════════════════════════════════
-with st.container(border=True):
+with _container(border=True):
     c1, c2, c3, c4 = st.columns(4)
     with c1:
         if not pop_d.empty:
@@ -231,7 +237,7 @@ with st.container(border=True):
 # ═══════════════════════════════════════
 # 소비 DNA
 # ═══════════════════════════════════════
-with st.container(border=True):
+with _container(border=True):
     st.markdown('<div style="font-size:15px; font-weight:700; margin-bottom:4px;">소비 DNA</div>', unsafe_allow_html=True)
     ca1, ca2 = st.columns(2)
     with ca1:
@@ -262,7 +268,7 @@ with st.container(border=True):
 # ═══════════════════════════════════════
 # 사람 흐름
 # ═══════════════════════════════════════
-with st.container(border=True):
+with _container(border=True):
     st.markdown('<div style="font-size:15px; font-weight:700; margin-bottom:4px;">사람 흐름</div>', unsafe_allow_html=True)
     cb1, cb2 = st.columns(2)
     with cb1:
@@ -289,7 +295,7 @@ with st.container(border=True):
 # ═══════════════════════════════════════
 # 부동산 트렌드
 # ═══════════════════════════════════════
-with st.container(border=True):
+with _container(border=True):
     st.markdown('<div style="font-size:15px; font-weight:700; margin-bottom:4px;">부동산 트렌드</div>', unsafe_allow_html=True)
     try:
         re = load_realestate()
@@ -312,7 +318,7 @@ with st.container(border=True):
 # ═══════════════════════════════════════
 # 금융 건전성
 # ═══════════════════════════════════════
-with st.container(border=True):
+with _container(border=True):
     st.markdown('<div style="font-size:15px; font-weight:700; margin-bottom:4px;">금융 건전성</div>', unsafe_allow_html=True)
     if not income_d.empty:
         cd1, cd2 = st.columns(2)

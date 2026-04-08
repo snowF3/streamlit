@@ -29,6 +29,13 @@ from charts import (
 )
 from chat_ui import render_chat_panel
 
+def _container(**kwargs):
+    """st.container 호환 래퍼 (구버전 Streamlit 대응)"""
+    try:
+        return st.container(**kwargs)
+    except TypeError:
+        return st.container()
+
 # ── CSS ──
 st.markdown("""<style>
 /* 전체 패딩 축소 */
@@ -260,7 +267,7 @@ with col_left:
     for s in filtered:
         month_groups.setdefault(s["month_label"], []).append(s)
 
-    signal_scroll = st.container(height=380)
+    signal_scroll = _container(height=380)
     with signal_scroll:
       for month_label, month_sigs in month_groups.items():
         year = month_label[:4]
@@ -321,7 +328,7 @@ with col_left:
     nearby_rows = pd.concat([my_row, others_rows])
     nearby = [_hp_to_signal(row) for _, row in nearby_rows.iterrows()]
     if nearby:
-        with st.container(border=True):
+        with _container(border=True):
             st.markdown(f'<div style="font-size:13px; font-weight:800; margin-bottom:4px;">{my_short} 근처 시그널</div>', unsafe_allow_html=True)
             for ni, r in enumerate(nearby):
                 rcolor = "#f04452" if r["direction"] == "up" else "#3182f6"
@@ -366,7 +373,7 @@ with col_mid:
 
     # 왜 올랐을까?
     why_title = "왜 올랐을까?" if sig["direction"] == "up" else "왜 떨어졌을까?"
-    with st.container(border=True):
+    with _container(border=True):
         st.markdown(f"**{why_title}**")
         reasons_html = "".join(
             f'<li style="font-size:13px; line-height:1.7; opacity:0.75; margin-bottom:4px;">{r}</li>'
