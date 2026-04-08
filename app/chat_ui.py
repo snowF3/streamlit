@@ -1,5 +1,5 @@
 """
-AI 에이전트 — 사이드바 컴팩트 채팅 (Snowflake SiS 호환)
+AI 에이전트 — 오른쪽 패널 (각 페이지 콘텐츠 옆에 표시)
 """
 import streamlit as st
 import json, re
@@ -79,54 +79,93 @@ def _answer(q, hist_list, pctx="", sel_d=""):
     return {"answer":_cortex(prompt,intent in("simulate","compare","recommend")),"intent":intent}
 
 
-def render_chat_panel(current_tab="", selected_district="", selected_month="", page_context=""):
-    """사이드바 AI 채팅"""
+# ═══════════════════════════════════════════
+# 오른쪽 채팅 패널
+# ═══════════════════════════════════════════
+
+def get_chat_layout(page_context="", selected_district=""):
+    """
+    페이지 시작 시 호출. 채팅 열림 여부에 따라 레이아웃 반환.
+
+    사용법 (각 페이지에서):
+        from chat_ui import get_chat_layout
+        content_col = get_chat_layout(page_context="동네 지도 - ...")
+        with content_col:
+            # 기존 페이지 콘텐츠 전부
+    """
     if "chat_messages" not in st.session_state:
         st.session_state.chat_messages = []
+    if "chat_open" not in st.session_state:
+        st.session_state.chat_open = False
 
-    with st.sidebar:
-        st.markdown("---")
+    # 채팅 닫혀있으면: 오른쪽에 작은 버튼만
+    if not st.session_state.chat_open:
+        content_col, btn_col = st.columns([20, 1])
+        with btn_col:
+            if st.button("🤖", key="chat_open_btn", help="AI 에이전트 열기"):
+                st.session_state.chat_open = True
+                _safe_rerun()
+        return content_col
+
+    # 채팅 열려있으면: [콘텐츠 | 채팅] 레이아웃
+    content_col, chat_col = st.columns([3, 1])
+
+    with chat_col:
+        # 닫기 버튼
+        if st.button("✕", key="chat_close_btn", help="닫기"):
+            st.session_state.chat_open = False
+            _safe_rerun()
+
+        # 헤더
         st.markdown("""<div style="background:linear-gradient(135deg,#6366F1,#8B5CF6);
-            padding:10px 14px;border-radius:10px;margin-bottom:10px;">
-            <span style="color:white;font-size:13px;font-weight:700;">🤖 AI 에이전트</span>
-            <span style="color:rgba(255,255,255,0.5);font-size:9px;float:right;margin-top:2px;">Cortex</span>
+            padding:10px 12px;border-radius:8px;margin-bottom:8px;">
+            <span style="color:white;font-size:12px;font-weight:700;">🤖 AI</span>
+            <span style="color:rgba(255,255,255,0.5);font-size:9px;float:right;">Cortex</span>
         </div>""", unsafe_allow_html=True)
 
+        # 컨텍스트
         if page_context:
-            st.caption(f"📍 {page_context[:40]}")
+            st.caption(f"📍 {page_context[:30]}")
 
+        # 추천 질문
         if not st.session_state.chat_messages:
-            qs={"🔍 유동인구":"신당동 유동인구 알려줘","🧪 시뮬":"서초동 카페 매출?","🔥 핫플":"다음 핫플은?","⚖️ 비교":"중구 vs 영등포구"}
-            c=st.columns(2)
-            for i,(k,v) in enumerate(qs.items()):
-                with c[i%2]:
-                    if st.button(k,key=f"q_{i}"):
-                        st.session_state.chat_messages.append({"role":"user","content":v})
-                        r=_answer(v,[],page_context,selected_district)
-                        st.session_state.chat_messages.append({"role":"assistant","content":r["answer"],"intent":r["intent"]})
-                        _safe_rerun()
+            if st.button("🔍 유동인구", key="q_0"): _do_ask("신당동 유동인구 알려줘", page_context, selected_district)
+            if st.button("🧪 시뮬", key="q_1"): _do_ask("서초동 카페 매출?", page_context, selected_district)
+            if st.button("🔥 핫플", key="q_2"): _do_ask("다음 핫플은?", page_context, selected_district)
+            if st.button("⚖️ 비교", key="q_3"): _do_ask("중구 vs 영등포구", page_context, selected_district)
 
+        # 대화
         for msg in st.session_state.chat_messages:
-            if msg["role"]=="user":
+            if msg["role"] == "user":
                 st.markdown(f"**🧑 {msg['content']}**")
             else:
-                badges={"lookup":"🔍","compare":"⚖️","trend":"📈","simulate":"🧪","recommend":"💡","hotplace":"🔥"}
-                b=badges.get(msg.get("intent",""),"")
+                badges = {"lookup":"🔍","compare":"⚖️","trend":"📈","simulate":"🧪","recommend":"💡","hotplace":"🔥"}
+                b = badges.get(msg.get("intent",""),"")
                 st.markdown(f"{b} {msg['content']}")
-                st.caption("─"*20)
+                st.markdown("---")
 
-        inp=st.text_input("질문",key="ai_in",label_visibility="collapsed",placeholder="무엇이든 물어보세요...")
-        c1,c2=st.columns([4,1])
+        # 입력
+        inp = st.text_input("질문", key="ai_in", label_visibility="collapsed", placeholder="물어보세요...")
+        c1, c2 = st.columns([3, 1])
         with c1:
-            send=st.button("전송 →",key="ai_send",use_container_width=True)
+            if st.button("→", key="ai_send"):
+                if inp:
+                    _do_ask(inp, page_context, selected_district)
         with c2:
-            if st.button("↻",key="ai_clr"):
-                st.session_state.chat_messages=[]
+            if st.button("↻", key="ai_clr"):
+                st.session_state.chat_messages = []
                 _safe_rerun()
 
-        if send and inp:
-            st.session_state.chat_messages.append({"role":"user","content":inp})
-            with st.spinner("분석 중..."):
-                r=_answer(inp,st.session_state.chat_messages[:-1],page_context,selected_district)
-            st.session_state.chat_messages.append({"role":"assistant","content":r["answer"],"intent":r["intent"]})
-            _safe_rerun()
+    return content_col
+
+
+def _do_ask(q, pctx, sel_d):
+    st.session_state.chat_messages.append({"role":"user","content":q})
+    r = _answer(q, st.session_state.chat_messages[:-1], pctx, sel_d)
+    st.session_state.chat_messages.append({"role":"assistant","content":r["answer"],"intent":r["intent"]})
+    _safe_rerun()
+
+
+def render_chat_panel(current_tab="", selected_district="", selected_month="", page_context=""):
+    """하위 호환용 — 기존 페이지에서 호출 시 아무것도 안 함 (get_chat_layout으로 대체)"""
+    pass
