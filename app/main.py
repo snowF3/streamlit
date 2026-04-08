@@ -83,6 +83,10 @@ pop_agg = load_population_agg()
 card_agg = load_card_sales_agg()
 hp = load_hotplace_monthly()
 
+if hp.empty or "DISTRICT_CODE" not in hp.columns:
+    st.warning("핫플 점수 데이터를 로드할 수 없습니다. processed_data/hotplace_monthly.parquet 파일을 확인하세요.")
+    st.stop()
+
 data_districts = set(hp["DISTRICT_CODE"].unique())
 rm = region_master[region_master["district_code"].isin(data_districts)].copy()
 rm["label"] = rm["city_kor"] + " " + rm["district_kor"]
