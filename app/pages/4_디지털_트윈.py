@@ -1,6 +1,6 @@
 """
 탭 4: 디지털 트윈 — 합성 시민이 움직이는 살아있는 지도 + 시뮬레이션
-데이터 범위: 중구, 영등포구, 서초구 (118개 법정동)
+데이터 범위: 중구, 영등포구, 서초구 (118개 법정동) ???? 맞아?
 """
 import streamlit as st
 import pandas as pd
@@ -8,6 +8,7 @@ import numpy as np
 import pydeck as pdk
 import json
 import sys
+
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
