@@ -306,6 +306,20 @@ def load_ajd_ga4():
 # 유틸리티
 # ═══════════════════════════════════════════
 
+@st.cache_data(ttl=3600)
+def load_hotplace_monthly():
+    """월별 핫플 점수 (전처리 완료)"""
+    import os
+    parquet_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "processed_data", "hotplace_monthly.parquet")
+    if os.path.exists(parquet_path):
+        return pd.read_parquet(parquet_path)
+    # Snowflake 환경에서는 테이블에서 로드 (테이블이 있는 경우)
+    try:
+        return run_query("SELECT * FROM ANALYTICS.HOTPLACE_MONTHLY")
+    except Exception:
+        return pd.DataFrame()
+
+
 def get_district_list():
     rm = load_region_master()
     rm["label"] = rm["city_kor"] + " " + rm["district_kor"]

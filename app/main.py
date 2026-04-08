@@ -1,5 +1,5 @@
 """
-동네 엑스레이 + 디지털 트윈 — 메인 앱 (뉴스 타임라인)
+동네 엑스레이 — 앱 진입점
 """
 import streamlit as st
 import sys
@@ -11,113 +11,72 @@ st.set_page_config(
     page_title="동네 엑스레이",
     page_icon="🏙️",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed",
 )
 
-from news_engine import generate_news_items, render_news_card, render_detail_panel
-from chat_ui import render_chat_panel
+# ── 페이지 정의 (pages/ 폴더) ──
+page_feed = st.Page("pages/0_피드.py", title="피드", default=True)
+page_map = st.Page("pages/1_동네_지도.py", title="지도")
+page_profile = st.Page("pages/2_동네_프로파일.py", title="프로파일")
+page_hot = st.Page("pages/3_넥스트_핫플.py", title="핫플")
+page_twin = st.Page("pages/4_디지털_트윈.py", title="트윈")
+page_compare = st.Page("pages/5_동네_비교.py", title="비교")
 
-# ── 뉴스 생성 ──
-news_items = generate_news_items()
+all_pages = [page_feed, page_map, page_profile, page_hot, page_twin, page_compare]
 
-# ── 사이드바: 뉴스 타임라인 ──
-with st.sidebar:
-    st.markdown("## 📰 실시간 인사이트")
-    st.caption(f"{len(news_items)}건의 데이터 변화 감지")
+# ── 글로벌 스타일 ──
+st.markdown("""<style>
+.block-container { padding-top: 3.5rem !important; }
+html, body, [data-testid="stAppViewContainer"] { font-size: 14px !important; }
+[data-testid="stMetricValue"] { font-size: 20px !important; }
+[data-testid="stMetricLabel"] { font-size: 11px !important; }
+[data-testid="stMetricDelta"] { font-size: 11px !important; }
+h1 { font-size: 22px !important; }
+h2 { font-size: 18px !important; }
+h3 { font-size: 15px !important; }
+p, li, span, div { font-size: inherit; }
 
-    # 필터
-    all_tags = sorted(set(item["tag"] for item in news_items))
-    selected_tags = st.multiselect("필터", all_tags, default=all_tags, key="news_filter")
+[data-testid="stHeader"] {
+    background: transparent !important;
+    pointer-events: none;
+}
+[data-testid="stHeader"] > * { pointer-events: auto; }
 
-    filtered_news = [item for item in news_items if item["tag"] in selected_tags]
+.header-row [data-testid="stPageLink-NavLink"] a {
+    font-size: 14px !important; font-weight: 500 !important;
+    color: inherit !important; opacity: 0.5;
+    text-decoration: none !important; padding: 4px 0 !important;
+}
+.header-row [data-testid="stPageLink-NavLink"] a:hover { opacity: 1; }
+.header-row [data-testid="stPageLink-NavLink"][aria-current="page"] a {
+    opacity: 1; font-weight: 700 !important;
+}
+</style>""", unsafe_allow_html=True)
 
-    st.divider()
+# ── 헤더 ──
+st.markdown('<div class="header-row">', unsafe_allow_html=True)
+cols = st.columns([1.5, 0.6, 0.6, 0.8, 0.6, 0.6, 0.6, 6])
 
-    # 뉴스 카드 렌더링
-    if "selected_news" not in st.session_state:
-        st.session_state.selected_news = 0
+with cols[0]:
+    st.markdown(
+        '<div style="font-size:15px; font-weight:800; letter-spacing:-0.5px; padding:4px 0;">'
+        '🏙️ <span style="background:linear-gradient(135deg,#6366F1,#8B5CF6);'
+        '-webkit-background-clip:text; -webkit-text-fill-color:transparent;">'
+        '동네 엑스레이</span></div>',
+        unsafe_allow_html=True,
+    )
 
-    for i, item in enumerate(filtered_news):
-        card_html = render_news_card(item, i)
-        st.markdown(card_html, unsafe_allow_html=True)
-        if st.button(
-            "상세 보기",
-            key=f"news_btn_{i}",
-            use_container_width=True,
-            type="secondary" if st.session_state.selected_news != i else "primary",
-        ):
-            st.session_state.selected_news = i
-            st.rerun()
+for i, page in enumerate(all_pages):
+    with cols[i + 1]:
+        st.page_link(page, label=page.title)
 
-    if not filtered_news:
-        st.info("선택된 카테고리에 해당하는 뉴스가 없습니다.")
+st.markdown('</div>', unsafe_allow_html=True)
+st.markdown('<div style="border-bottom:1px solid rgba(128,128,128,0.1); margin-bottom:8px;"></div>', unsafe_allow_html=True)
 
-# ── 메인 영역: 선택된 뉴스 상세 ──
-st.title("🏙️ 동네 엑스레이")
+# ── 네비게이션 ──
+try:
+    nav = st.navigation(all_pages, position="hidden")
+except TypeError:
+    nav = st.navigation(all_pages)
 
-if filtered_news:
-    idx = min(st.session_state.selected_news, len(filtered_news) - 1)
-    selected_item = filtered_news[idx]
-
-    # 상단: 카드 요약
-    severity_colors = {"high": "🔴", "medium": "🟡", "low": "🟢"}
-    sev_icon = severity_colors.get(selected_item.get("severity", "low"), "⚪")
-
-    col_header, col_meta = st.columns([3, 1])
-    with col_header:
-        st.markdown(f"## {selected_item['icon']} {selected_item['title']}")
-    with col_meta:
-        st.markdown(f"**{selected_item['month']}** {sev_icon} {selected_item.get('severity', '').upper()}")
-
-    # 상세 패널
-    render_detail_panel(selected_item)
-
-    # 하단: 관련 뉴스
-    st.divider()
-    st.markdown("### 📌 관련 인사이트")
-    related = [item for item in filtered_news
-               if item.get("district_code") == selected_item.get("district_code")
-               and item != selected_item]
-
-    if related:
-        cols = st.columns(min(len(related), 3))
-        for j, rel in enumerate(related[:3]):
-            with cols[j]:
-                st.markdown(f"""
-                <div style="
-                    border: 1px solid #333;
-                    padding: 12px;
-                    border-radius: 8px;
-                    background: #1a1a1a;
-                ">
-                    <div style="font-size:12px; color:{rel['tag_color']}; font-weight:600;">{rel['tag']}</div>
-                    <div style="font-size:14px; font-weight:600; margin:4px 0;">{rel['icon']} {rel['title']}</div>
-                    <div style="font-size:12px; color:#888;">{rel['summary']}</div>
-                </div>
-                """, unsafe_allow_html=True)
-    else:
-        st.caption("같은 지역의 다른 인사이트가 없습니다.")
-
-else:
-    st.info("👈 왼쪽 사이드바에서 인사이트 뉴스를 선택하세요.")
-    st.markdown("""
-    ---
-    **다른 분석 도구:**
-
-    | 탭 | 기능 |
-    |---|---|
-    | **동네 지도** | 서울 법정동별 지표 코로플레스 맵 |
-    | **동네 프로파일** | 선택한 동네의 소비·인구·부동산·소득 엑스레이 |
-    | **넥스트 핫플** | 5개 선행지표 기반 핫플 예측 |
-    | **디지털 트윈** | 합성 시민이 움직이는 살아있는 지도 + 시뮬레이션 |
-    | **동네 비교** | 2~3개 동네 나란히 비교 |
-    """)
-
-# Build page context for chat panel
-if filtered_news:
-    _ctx_title = selected_item.get("title", "")
-    page_context = f"메인 뉴스 타임라인 - 선택된 인사이트: {_ctx_title}"
-else:
-    page_context = "메인 뉴스 타임라인"
-
-render_chat_panel(current_tab="메인", selected_district=None, selected_month=None, page_context=page_context)
+nav.run()
