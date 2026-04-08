@@ -171,11 +171,11 @@ def income_distribution_chart(income_row, title="소득 분포"):
     """소득 구간별 비율 바 차트"""
     income_cols = {
         "RATE_INCOME_UNDER_20M": "~2천만",
-        "RATE_INCOME_20M_30M": "2~3천만",
-        "RATE_INCOME_30M_40M": "3~4천만",
-        "RATE_INCOME_40M_50M": "4~5천만",
-        "RATE_INCOME_50M_60M": "5~6천만",
-        "RATE_INCOME_60M_70M": "6~7천만",
+        "RATE_INCOME_20M_TO_30M": "2~3천만",
+        "RATE_INCOME_30M_TO_40M": "3~4천만",
+        "RATE_INCOME_40M_TO_50M": "4~5천만",
+        "RATE_INCOME_50M_TO_60M": "5~6천만",
+        "RATE_INCOME_60M_TO_70M": "6~7천만",
         "RATE_INCOME_OVER_70M": "7천만~",
     }
 

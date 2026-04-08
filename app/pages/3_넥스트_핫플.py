@@ -3,8 +3,7 @@
 """
 import streamlit as st
 import pandas as pd
-import folium
-from streamlit_folium import st_folium
+import pydeck as pdk
 import sys
 from pathlib import Path
 
@@ -109,35 +108,38 @@ col1, col2 = st.columns([3, 2])
 with col1:
     st.subheader("🗺️ 핫플 스코어 히트맵")
 
-    # GeoJSON에 스코어 주입
+    # GeoJSON에 스코어 + 색상 주입
     score_dict = scores.set_index("DISTRICT_CODE")["hotplace_score"].to_dict()
     name_dict2 = scores.set_index("DISTRICT_CODE")["name"].to_dict()
+    vals = list(score_dict.values())
+    min_v, max_v = min(vals) if vals else 0, max(vals) if vals else 1
+    rng = max_v - min_v if max_v != min_v else 1
+
     for feature in geojson["features"]:
         dc = feature["properties"]["district_code"]
-        feature["properties"]["hotplace_score"] = round(score_dict.get(dc, 0), 1)
+        val = score_dict.get(dc, 0)
+        norm = (val - min_v) / rng
+        r, g, b = 255, int(255*(1-norm*0.8)), int(255*(1-norm))
+        feature["properties"]["fill_color"] = [r, g, b, int(160+norm*60)]
+        feature["properties"]["hotplace_score"] = round(val, 1)
         feature["properties"]["display_name"] = name_dict2.get(dc, dc)
 
-    m = folium.Map(location=[37.5665, 126.9780], zoom_start=11, tiles="CartoDB positron")
-
-    choropleth = folium.Choropleth(
-        geo_data=geojson,
-        data=scores,
-        columns=["DISTRICT_CODE", "hotplace_score"],
-        key_on="feature.properties.district_code",
-        fill_color="YlOrRd",
-        fill_opacity=0.7,
-        line_opacity=0.3,
-        legend_name="핫플 스코어",
-        nan_fill_color="white"
-    ).add_to(m)
-
-    folium.GeoJsonTooltip(
-        fields=["display_name", "hotplace_score"],
-        aliases=["동네", "핫플 스코어"],
-        style="font-size: 14px;"
-    ).add_to(choropleth.geojson)
-
-    st_folium(m, width=700, height=500)
+    layer = pdk.Layer(
+        "GeoJsonLayer",
+        data=geojson,
+        get_fill_color="properties.fill_color",
+        get_line_color=[80, 80, 80, 100],
+        line_width_min_pixels=1,
+        pickable=True,
+        auto_highlight=True,
+    )
+    view = pdk.ViewState(latitude=37.51, longitude=126.95, zoom=11.5, pitch=0)
+    deck = pdk.Deck(
+        layers=[layer], initial_view_state=view,
+        tooltip={"text": "{properties.display_name}\n핫플 스코어: {properties.hotplace_score}"},
+        map_provider="carto", map_style="light",
+    )
+    st.pydeck_chart(deck, height=500)
 
 with col2:
     st.subheader("📊 Top 20 핫플 동네")
