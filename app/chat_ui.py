@@ -305,100 +305,69 @@ def _answer_question(query: str, chat_history: list, page_context: str = "", sel
 # ═══════════════════════════════════════════
 
 def render_chat_panel(current_tab: str = "", selected_district: str = "", selected_month: str = "", page_context: str = ""):
-    """Snowflake Cortex 고도화 채팅 패널"""
+    """사이드바 AI 채팅 패널 — 항상 접근 가능"""
 
     if "chat_messages" not in st.session_state:
         st.session_state.chat_messages = []
-    if "chat_open" not in st.session_state:
-        st.session_state.chat_open = False
 
-    # 토글
-    st.markdown("---")
-    c1, c2 = st.columns([1, 5])
-    with c1:
-        label = "🤖 AI 열기" if not st.session_state.chat_open else "✕ 닫기"
-        if st.button(label, key="sf_chat_toggle"):
-            st.session_state.chat_open = not st.session_state.chat_open
-            _safe_rerun()
-    with c2:
-        if not st.session_state.chat_open:
-            st.caption("🤖 데이터 기반 AI 에이전트 — 실제 Snowflake 데이터를 조회하여 답변합니다")
-
-    if not st.session_state.chat_open:
-        return
-
-    # 헤더
-    st.markdown(f"""
-    <div style="background:linear-gradient(135deg,#6366F1,#8B5CF6);padding:14px 18px;border-radius:12px 12px 0 0;">
-        <span style="color:white;font-size:15px;font-weight:700;">🤖 동네 엑스레이 AI</span>
-        <span style="color:rgba(255,255,255,0.6);font-size:11px;margin-left:8px;">
-            🟢 Cortex · 데이터 직접 조회 · {CORTEX_MODEL}
-        </span>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # 대화 영역
-    if not st.session_state.chat_messages:
+    with st.sidebar:
+        st.markdown("---")
         st.markdown("""
-        <div style="text-align:center;padding:20px;color:#888;">
-            <div style="font-size:32px;margin-bottom:8px;">🏙️</div>
-            <div style="font-size:14px;font-weight:600;">실제 데이터를 조회하여 답변합니다</div>
-            <div style="font-size:11px;margin-top:4px;">유동인구 · 카드매출 · 소득 · 시뮬레이션 · 핫플 예측</div>
+        <div style="background:linear-gradient(135deg,#6366F1,#8B5CF6);padding:12px 16px;border-radius:10px;margin-bottom:12px;">
+            <span style="color:white;font-size:14px;font-weight:700;">🤖 AI 에이전트</span><br>
+            <span style="color:rgba(255,255,255,0.6);font-size:10px;">Cortex · 실제 데이터 조회</span>
         </div>
         """, unsafe_allow_html=True)
 
-        suggestions = [
-            "신당동 유동인구 알려줘",
-            "서초동에 카페 차리면 매출이?",
-            "다음 핫플은 어디야?",
-            "중구 vs 영등포구 비교",
-            "잠원동에서 뭘 팔면 좋을까?",
-            "신당동 최근 추이 보여줘",
-        ]
-        cols = st.columns(3)
-        for i, s in enumerate(suggestions):
-            with cols[i % 3]:
-                if st.button(s, key=f"sf_sug_{i}"):
-                    st.session_state.chat_messages.append({"role": "user", "content": s})
-                    result = _answer_question(s, [], page_context, selected_district)
-                    st.session_state.chat_messages.append({
-                        "role": "assistant",
-                        "content": result["answer"],
-                        "intent": result.get("intent", ""),
-                    })
-                    _safe_rerun()
-    else:
+        # 추천 질문
+        if not st.session_state.chat_messages:
+            suggestions = ["신당동 유동인구", "카페 시뮬레이션", "핫플 예측", "동네 비교"]
+            cols = st.columns(2)
+            for i, s in enumerate(suggestions):
+                full_q = {"신당동 유동인구": "신당동 유동인구 알려줘",
+                          "카페 시뮬레이션": "서초동에 카페 차리면 매출이?",
+                          "핫플 예측": "다음 핫플은 어디야?",
+                          "동네 비교": "중구 vs 영등포구 비교"}
+                with cols[i % 2]:
+                    if st.button(s, key=f"sf_sug_{i}"):
+                        q = full_q[s]
+                        st.session_state.chat_messages.append({"role": "user", "content": q})
+                        result = _answer_question(q, [], page_context, selected_district)
+                        st.session_state.chat_messages.append({
+                            "role": "assistant", "content": result["answer"],
+                            "intent": result.get("intent", ""),
+                        })
+                        _safe_rerun()
+
+        # 대화 히스토리
         for msg in st.session_state.chat_messages:
             if msg["role"] == "user":
-                st.markdown(f"""<div style="text-align:right;margin:8px 0;">
-                    <span style="background:#6366F1;color:white;padding:8px 14px;border-radius:16px 16px 4px 16px;display:inline-block;max-width:80%;font-size:13px;">
-                        🧑 {msg['content']}</span></div>""", unsafe_allow_html=True)
+                st.markdown(f"**🧑 {msg['content']}**")
             else:
-                intent_badge = ""
                 intent = msg.get("intent", "")
-                if intent:
-                    badges = {"lookup":"🔍조회","compare":"⚖️비교","trend":"📈추이",
-                              "simulate":"🧪시뮬","recommend":"💡추천","hotplace":"🔥핫플"}
-                    intent_badge = f'<div style="font-size:10px;color:#888;margin-top:4px;">{badges.get(intent, intent)}</div>'
-                st.markdown(f"""<div style="margin:8px 0;">
-                    <span style="background:#2a2a4a;color:#E0E0E0;padding:10px 14px;border-radius:16px 16px 16px 4px;display:inline-block;max-width:85%;font-size:13px;line-height:1.6;">
-                        🤖 {msg['content']}{intent_badge}</span></div>""", unsafe_allow_html=True)
+                badges = {"lookup":"🔍","compare":"⚖️","trend":"📈",
+                          "simulate":"🧪","recommend":"💡","hotplace":"🔥"}
+                badge = badges.get(intent, "")
+                st.markdown(f"{badge} {msg['content']}")
+                st.markdown("---")
 
-    # 입력
-    c_inp, c_clr = st.columns([6, 1])
-    with c_clr:
-        if st.button("🗑️", key="sf_clear", help="초기화"):
-            st.session_state.chat_messages = []
+        # 입력
+        user_input = st.text_input("질문 입력", key="sf_chat_input", label_visibility="collapsed",
+                                    placeholder="무엇이든 물어보세요...")
+        c1, c2 = st.columns([3, 1])
+        with c1:
+            send = st.button("전송", key="sf_send", use_container_width=True)
+        with c2:
+            if st.button("🗑️", key="sf_clear"):
+                st.session_state.chat_messages = []
+                _safe_rerun()
+
+        if send and user_input:
+            st.session_state.chat_messages.append({"role": "user", "content": user_input})
+            with st.spinner("데이터 조회 중..."):
+                result = _answer_question(user_input, st.session_state.chat_messages[:-1], page_context, selected_district)
+            st.session_state.chat_messages.append({
+                "role": "assistant", "content": result["answer"],
+                "intent": result.get("intent", ""),
+            })
             _safe_rerun()
-
-    user_input = st.text_input("무엇이든 물어보세요...", key="sf_chat_input", label_visibility="collapsed")
-    if st.button("전송", key="sf_send") and user_input:
-        st.session_state.chat_messages.append({"role": "user", "content": user_input})
-        with st.spinner("데이터 조회 + Cortex 분석 중..."):
-            result = _answer_question(user_input, st.session_state.chat_messages[:-1], page_context, selected_district)
-        st.session_state.chat_messages.append({
-            "role": "assistant",
-            "content": result["answer"],
-            "intent": result.get("intent", ""),
-        })
-        _safe_rerun()
