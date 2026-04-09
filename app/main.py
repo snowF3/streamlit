@@ -1,5 +1,5 @@
 """
-동네 엑스레이 — 메인 (피드)
+동네 엑스레이 — 인사이트 피드
 """
 import streamlit as st
 import pandas as pd
@@ -29,22 +29,36 @@ from charts import (
 )
 from chat_ui import render_chat_panel
 
-def _container(**kwargs):
-    """st.container 호환 래퍼 (구버전 Streamlit 대응)"""
-    try:
-        return st.container(**kwargs)
-    except TypeError:
-        return st.container()
+# ── 페이지 정의 ──
+page_map = st.Page("pages/1_동네_지도.py", title="지도")
+page_profile = st.Page("pages/2_동네_프로파일.py", title="프로파일")
+page_hot = st.Page("pages/3_넥스트_핫플.py", title="핫플")
+page_twin = st.Page("pages/4_디지털_트윈.py", title="트윈")
+page_compare = st.Page("pages/5_동네_비교.py", title="비교")
+all_pages = [page_map, page_profile, page_hot, page_twin, page_compare]
 
-# ── CSS (구버전 호환) ──
+# ── 글로벌 스타일 + 헤더 ──
 st.markdown("""<style>
-.block-container { padding-top: 1rem !important; padding-bottom: 0 !important; }
+.block-container { padding-top: 3.5rem !important; padding-bottom: 0 !important; }
 [data-testid="stVerticalBlock"] { gap: 0.4rem !important; }
 [data-testid="stColumn"]:nth-child(2) [data-testid="stVerticalBlock"] { gap: 0.5rem !important; }
-[data-testid="stColumn"]:first-child [data-testid="stVerticalBlock"] { gap: 0.2rem !important; }
+[data-testid="stColumn"]:first-child [data-testid="stVerticalBlock"] { gap: 0 !important; }
+[data-testid="stHeader"] { background: transparent !important; pointer-events: none; }
+[data-testid="stHeader"] > * { pointer-events: auto; }
+/* 투명 버튼 */
+[data-testid="stBaseButton-tertiary"] {
+    margin: 0 !important; position: relative; z-index: 1;
+    margin-top: -36px !important; height: 36px !important;
+}
+[data-testid="stBaseButton-tertiary"] button {
+    min-height: 36px !important; height: 36px !important;
+    padding: 0 !important; opacity: 0 !important; cursor: pointer !important;
+}
+.sig-card { transition: background 0.15s; border-radius: 0 6px 6px 0; }
+.sig-card:hover { background: rgba(128,128,128,0.06) !important; }
 .signal-header {
     font-size: 12px; font-weight: 700; padding: 8px 0 6px;
-    border-bottom: 1px solid rgba(128,128,128,0.12); margin-bottom: 4px;
+    border-bottom: 1px solid rgba(128,128,128,0.12); margin-bottom: 14px;
 }
 .kw-tag {
     display: inline-block; padding: 4px 10px; border-radius: 16px;
@@ -64,17 +78,30 @@ st.markdown("""<style>
 [data-testid="stExpander"] summary { font-size: 12px !important; padding: 4px 0 !important; }
 hr { margin: 10px 0 !important; }
 [data-testid="stTab"] button { font-size: 12px !important; padding: 4px 8px !important; }
+.header-nav a { font-size: 14px !important; font-weight: 500 !important; opacity: 0.5; padding: 4px 0 !important; }
+.header-nav a:hover { opacity: 1; }
 </style>""", unsafe_allow_html=True)
 
+# ── 헤더 네비게이션 ──
+st.markdown('<div class="header-nav">', unsafe_allow_html=True)
+hcols = st.columns([1.5, 0.6, 0.8, 0.6, 0.6, 0.6, 6])
+with hcols[0]:
+    st.markdown(
+        '<span style="font-size:15px; font-weight:800;'
+        ' background:linear-gradient(135deg,#6366F1,#8B5CF6);'
+        ' -webkit-background-clip:text; -webkit-text-fill-color:transparent;">'
+        '동네 엑스레이</span>',
+        unsafe_allow_html=True,
+    )
+for i, pg in enumerate(all_pages):
+    with hcols[i + 1]:
+        st.page_link(pg, label=pg.title)
+st.markdown('</div>', unsafe_allow_html=True)
 # ── 데이터 로드 ──
 region_master = load_region_master()
 pop_agg = load_population_agg()
 card_agg = load_card_sales_agg()
 hp = load_hotplace_monthly()
-
-if hp.empty or "DISTRICT_CODE" not in hp.columns:
-    st.warning("핫플 점수 데이터를 로드할 수 없습니다. processed_data/hotplace_monthly.parquet 파일을 확인하세요.")
-    st.stop()
 
 data_districts = set(hp["DISTRICT_CODE"].unique())
 rm = region_master[region_master["district_code"].isin(data_districts)].copy()
@@ -245,60 +272,58 @@ with col_left:
     else:
         filtered = list(signals)
 
-    # 순위 계산
-    for s in filtered:
-        m_all = hp[hp["STANDARD_YEAR_MONTH"] == s["month"]].sort_values("hotplace_score", ascending=False)
-        rank_list = list(m_all["DISTRICT_CODE"])
-        total_d = len(rank_list)
-        rank = rank_list.index(s["dc"]) + 1 if s["dc"] in rank_list else 0
-        if rank <= 3:
-            s["_rank"] = f"상위{rank}"
-        elif rank > total_d - 3:
-            s["_rank"] = f"하위{total_d - rank + 1}"
-        else:
-            s["_rank"] = f"{rank}/{total_d}"
-
-    # selectbox로 시그널 선택
-    def _sig_label(s):
-        cp = "+" if s["direction"] == "up" else ""
-        m = s["month_label"]
-        return f"[{m[:4]}.{m[5:]}] {s['name']} {cp}{s['composite']}점 · {s['_rank']}"
-
-    options = [_sig_label(s) for s in filtered]
-    sel_idx = min(st.session_state.selected_signal_idx, len(filtered) - 1)
-    chosen = st.selectbox("시그널 선택", options, index=sel_idx, label_visibility="collapsed")
-
-    new_idx = options.index(chosen) if chosen in options else 0
-    if new_idx != st.session_state.selected_signal_idx:
-        st.session_state.selected_signal_idx = new_idx
-        st.rerun()
-
-    # 선택된 월의 시그널 요약
     month_groups: dict[str, list] = {}
     for s in filtered:
         month_groups.setdefault(s["month_label"], []).append(s)
 
-    for ml, sigs_in_month in month_groups.items():
-        year, mon = ml[:4], ml[5:]
+    signal_scroll = st.container(height=380)
+    with signal_scroll:
+      for month_label, month_sigs in month_groups.items():
+        year = month_label[:4]
+        mon = month_label[5:]
         st.markdown(f'<div class="signal-header">{year}년 {int(mon)}월</div>', unsafe_allow_html=True)
-        for s in sigs_in_month:
-            is_sel = (filtered.index(s) == st.session_state.selected_signal_idx)
-            cp = "+" if s["direction"] == "up" else ""
-            color = "#f04452" if s["direction"] == "up" else "#3182f6"
-            dl = "상승" if s["direction"] == "up" else "하락"
-            bg = "rgba(99,102,241,0.10)" if is_sel else "transparent"
-            bl = "3px solid #6366F1" if is_sel else "3px solid transparent"
+
+        # 해당 월 전체 순위 계산
+        m_ym = month_sigs[0]["month"] if month_sigs else None
+        m_all = hp[hp["STANDARD_YEAR_MONTH"] == m_ym].sort_values("hotplace_score", ascending=False) if m_ym else pd.DataFrame()
+        rank_map = {row["DISTRICT_CODE"]: i + 1 for i, (_, row) in enumerate(m_all.iterrows())} if not m_all.empty else {}
+        total_d = len(m_all)
+
+        for sig_item in month_sigs:
+            global_idx = signals.index(sig_item) if sig_item in signals else 0
+            is_selected = global_idx == st.session_state.selected_signal_idx
+            chg_prefix = "+" if sig_item["direction"] == "up" else ""
+            color = "#f04452" if sig_item["direction"] == "up" else "#3182f6"
+            dir_label = "상승" if sig_item["direction"] == "up" else "하락"
+            kw = sig_item["keywords"][0] if sig_item["keywords"] else ""
+            rank = rank_map.get(sig_item["dc"], 0)
+            if rank and total_d:
+                if rank <= 3:
+                    rank_str = f"상위 {rank}"
+                elif rank > total_d - 3:
+                    rank_str = f"하위 {total_d - rank + 1}"
+                else:
+                    rank_str = f"{rank}/{total_d}"
+            else:
+                rank_str = ""
+
+            bg = "rgba(99,102,241,0.10)" if is_selected else "transparent"
+            bl = "3px solid #6366F1" if is_selected else "3px solid transparent"
+
             st.markdown(
-                f'<div style="padding:5px 6px; background:{bg}; border-left:{bl}; border-radius:0 4px 4px 0; margin-bottom:2px;">'
+                f'<div class="sig-card" style="padding:6px 6px; background:{bg}; border-left:{bl};">'
                 f'  <div style="display:flex; justify-content:space-between;">'
-                f'    <span style="font-size:12px; font-weight:700;">{s["name"]}</span>'
-                f'    <span style="font-size:9px; opacity:0.3;">{s["_rank"]}</span></div>'
-                f'  <div style="font-size:11px;">'
-                f'    <span style="color:{color};">{cp}{s["composite"]}점 {dl}</span>'
-                f'    <span style="opacity:0.3;"> · {s["keywords"][0] if s["keywords"] else ""}</span></div>'
+                f'    <span style="font-size:13px; font-weight:700;">{sig_item["name"]}</span>'
+                f'    <span style="font-size:9px; opacity:0.3;">{rank_str}</span></div>'
+                f'  <div style="font-size:11px; margin-top:1px;">'
+                f'    <span style="color:{color};">{chg_prefix}{sig_item["composite"]}점 {dir_label}</span>'
+                f'    <span style="opacity:0.35;"> · {kw}</span></div>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
+            if st.button("ㅤ", key=f"sig_{global_idx}", use_container_width=True, type="tertiary"):
+                st.session_state.selected_signal_idx = global_idx
+                st.rerun()
 
     # ── 근처 시그널 (parquet에서 직접 조회) ──
     # ── 근처 시그널 (별도 컨테이너) ──
@@ -312,7 +337,7 @@ with col_left:
     nearby_rows = pd.concat([my_row, others_rows])
     nearby = [_hp_to_signal(row) for _, row in nearby_rows.iterrows()]
     if nearby:
-        with _container(border=True):
+        with st.container(border=True):
             st.markdown(f'<div style="font-size:13px; font-weight:800; margin-bottom:4px;">{my_short} 근처 시그널</div>', unsafe_allow_html=True)
             for ni, r in enumerate(nearby):
                 rcolor = "#f04452" if r["direction"] == "up" else "#3182f6"
@@ -357,7 +382,7 @@ with col_mid:
 
     # 왜 올랐을까?
     why_title = "왜 올랐을까?" if sig["direction"] == "up" else "왜 떨어졌을까?"
-    with _container(border=True):
+    with st.container(border=True):
         st.markdown(f"**{why_title}**")
         reasons_html = "".join(
             f'<li style="font-size:13px; line-height:1.7; opacity:0.75; margin-bottom:4px;">{r}</li>'
@@ -429,16 +454,23 @@ with col_mid:
             rk = rel["keywords"][0] if rel["keywords"] else ""
             rel_hp_all = hp[(hp["DISTRICT_CODE"] == rel["dc"]) & (hp["STANDARD_YEAR_MONTH"] <= rel["month"])]
             rel_curr = round(100 + rel_hp_all["hotplace_score"].sum(), 1)
-            rel_label = f"{rel['name']} {rel_curr}점 ({rp}{rel['composite']})"
             st.markdown(
-                f'<div style="font-size:11px; padding:3px 0; border-bottom:1px solid rgba(128,128,128,0.06);">'
-                f'  <span style="font-weight:600;">{rel["name"]}</span>'
-                f'  <span style="font-weight:700;"> {rel_curr}점</span>'
-                f'  <span style="color:{rc}; font-weight:600;"> {rp}{rel["composite"]}점</span>'
-                f'  <span style="opacity:0.3;"> · {rk}</span>'
+                f'<div class="sig-card" style="display:flex; justify-content:space-between; align-items:center;'
+                f'  padding:4px 0; border-bottom:1px solid rgba(128,128,128,0.06); cursor:pointer;">'
+                f'  <div style="display:flex; align-items:center; gap:5px;">'
+                f'    <span style="font-size:11px; font-weight:600;">{rel["name"]}</span>'
+                f'    <span style="font-size:11px; font-weight:700;">{rel_curr}점</span>'
+                f'    <span style="font-size:10px; color:{rc}; font-weight:600;">{rp}{rel["composite"]}점</span>'
+                f'  </div>'
+                f'  <span style="font-size:9px; opacity:0.3;">{rk}</span>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
+            if st.button("ㅤ", key=f"rel_{ri}", use_container_width=True, type="tertiary"):
+                idx = signals.index(rel) if rel in signals else None
+                if idx is not None:
+                    st.session_state.selected_signal_idx = idx
+                    st.rerun()
     else:
         st.caption("같은 구의 다른 시그널이 없습니다.")
 
@@ -466,7 +498,7 @@ with col_right:
     prev_month = all_months[ym_idx + 1] if ym_idx + 1 < len(all_months) else None
     ml_str = f"{str(latest_month)[:4]}년 {int(str(latest_month)[4:6])}월" if latest_month else ""
     st.caption(f"{city} {district} · {ml_str}")
-    st.caption("↑ 사이드바에서 '동네 프로파일'로 이동")
+    st.page_link("pages/2_동네_프로파일.py", label=f"프로파일 상세 보기 →", use_container_width=True)
 
     if not latest_month:
         st.stop()
