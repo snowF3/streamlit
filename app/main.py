@@ -274,21 +274,10 @@ with col_left:
             else:
                 rank_str = ""
 
-            bg = "rgba(99,102,241,0.10)" if is_selected else "transparent"
-            bl = "3px solid #6366F1" if is_selected else "3px solid transparent"
-
-            st.markdown(
-                f'<div class="sig-card" style="padding:6px 6px; background:{bg}; border-left:{bl};">'
-                f'  <div style="display:flex; justify-content:space-between;">'
-                f'    <span style="font-size:13px; font-weight:700;">{sig_item["name"]}</span>'
-                f'    <span style="font-size:9px; opacity:0.3;">{rank_str}</span></div>'
-                f'  <div style="font-size:11px; margin-top:1px;">'
-                f'    <span style="color:{color};">{chg_prefix}{sig_item["composite"]}점 {dir_label}</span>'
-                f'    <span style="opacity:0.35;"> · {kw}</span></div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-            if st.button("ㅤ", key=f"sig_{global_idx}", use_container_width=True, type="secondary"):
+            sel_mark = "● " if is_selected else ""
+            btn_label = f"{sel_mark}{sig_item['name']} {chg_prefix}{sig_item['composite']}점 {dir_label} · {rank_str}"
+            btn_type = "primary" if is_selected else "secondary"
+            if st.button(btn_label, key=f"sig_{global_idx}", use_container_width=True, type=btn_type):
                 st.session_state.selected_signal_idx = global_idx
                 st.rerun()
 
@@ -422,22 +411,14 @@ with col_mid:
             rel_hp_all = hp[(hp["DISTRICT_CODE"] == rel["dc"]) & (hp["STANDARD_YEAR_MONTH"] <= rel["month"])]
             rel_curr = round(100 + rel_hp_all["hotplace_score"].sum(), 1)
             st.markdown(
-                f'<div class="sig-card" style="display:flex; justify-content:space-between; align-items:center;'
-                f'  padding:4px 0; border-bottom:1px solid rgba(128,128,128,0.06); cursor:pointer;">'
-                f'  <div style="display:flex; align-items:center; gap:5px;">'
-                f'    <span style="font-size:11px; font-weight:600;">{rel["name"]}</span>'
-                f'    <span style="font-size:11px; font-weight:700;">{rel_curr}점</span>'
-                f'    <span style="font-size:10px; color:{rc}; font-weight:600;">{rp}{rel["composite"]}점</span>'
-                f'  </div>'
-                f'  <span style="font-size:9px; opacity:0.3;">{rk}</span>'
+                f'<div style="font-size:11px; padding:4px 0; border-bottom:1px solid rgba(128,128,128,0.06);">'
+                f'  <span style="font-weight:600;">{rel["name"]}</span>'
+                f'  <span style="font-weight:700;"> {rel_curr}점</span>'
+                f'  <span style="color:{rc}; font-weight:600;"> {rp}{rel["composite"]}점</span>'
+                f'  <span style="opacity:0.3;"> · {rk}</span>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
-            if st.button("ㅤ", key=f"rel_{ri}", use_container_width=True, type="secondary"):
-                idx = signals.index(rel) if rel in signals else None
-                if idx is not None:
-                    st.session_state.selected_signal_idx = idx
-                    st.rerun()
     else:
         st.caption("같은 구의 다른 시그널이 없습니다.")
 
