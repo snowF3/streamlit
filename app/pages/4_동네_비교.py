@@ -15,8 +15,20 @@ from data_loader import (
 from charts import CATEGORY_KOR
 from chat_ui import render_chat_panel
 
-st.set_page_config(page_title="동네 비교", page_icon="⚖️", layout="wide")
-st.title("⚖️ 동네 비교")
+st.markdown("""<style>
+html, body, [data-testid="stAppViewContainer"] { font-size: 14px !important; }
+[data-testid="stMetricValue"] { font-size: 20px !important; }
+[data-testid="stMetricLabel"] { font-size: 11px !important; }
+h2, h3 { font-size: 15px !important; }
+</style>""", unsafe_allow_html=True)
+st.markdown('<span style="font-size:18px; font-weight:800;">동네 비교</span>', unsafe_allow_html=True)
+st.markdown(
+    '<div style="display:flex; align-items:center; gap:8px; margin:4px 0;">'
+    '<span style="color:#6366F1; font-weight:700;">✦</span>'
+    '<span style="font-size:13px; opacity:0.5;">'
+    '최대 3개 동네의 소비·인구·소득을 나란히 비교합니다</span></div>',
+    unsafe_allow_html=True,
+)
 
 # ── 데이터 로드 ──
 try:

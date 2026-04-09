@@ -19,9 +19,20 @@ from data_loader import (
 from charts import TIME_SLOT_KOR, LIFESTYLE_KOR, CATEGORY_KOR
 from chat_ui import render_chat_panel
 
-st.set_page_config(page_title="디지털 트윈", page_icon="🌆", layout="wide")
-st.title("🌆 디지털 트윈 — 살아있는 서울")
-st.caption("데이터 범위: 서울 중구 · 영등포구 · 서초구 (118개 법정동)")
+st.markdown("""<style>
+html, body, [data-testid="stAppViewContainer"] { font-size: 14px !important; }
+[data-testid="stMetricValue"] { font-size: 20px !important; }
+[data-testid="stMetricLabel"] { font-size: 11px !important; }
+h2, h3 { font-size: 15px !important; }
+</style>""", unsafe_allow_html=True)
+st.markdown('<span style="font-size:18px; font-weight:800;">디지털 트윈</span>', unsafe_allow_html=True)
+st.markdown(
+    '<div style="display:flex; align-items:center; gap:8px; margin:4px 0;">'
+    '<span style="color:#6366F1; font-weight:700;">✦</span>'
+    '<span style="font-size:13px; opacity:0.5;">'
+    '합성 시민이 움직이는 살아있는 서울 — 시간대별 인구 흐름 시뮬레이션</span></div>',
+    unsafe_allow_html=True,
+)
 
 # ── 색상 팔레트 (라이프스타일별) ──
 LIFESTYLE_COLORS = {
