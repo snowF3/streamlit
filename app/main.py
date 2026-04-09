@@ -39,7 +39,7 @@ def _container(**kwargs):
 st.markdown("""<style>
 .block-container { padding-top: 1rem !important; padding-bottom: 0 !important; }
 [data-testid="stVerticalBlock"] { gap: 0.4rem !important; }
-[data-testid="stColumn"]:nth-child(2) [data-testid="stVerticalBlock"] { gap: 0.5rem !important; }
+[data-testid="stColumn"]:nth-child(2) [data-testid="stVerticalBlock"] { gap: 0.7rem !important; }
 [data-testid="stColumn"]:first-child [data-testid="stVerticalBlock"] { gap: 0.2rem !important; }
 .signal-header {
     font-size: 12px; font-weight: 700; padding: 8px 0 6px;

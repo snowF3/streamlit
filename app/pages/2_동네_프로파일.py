@@ -63,32 +63,15 @@ if "my_neighborhood" in st.session_state and st.session_state.my_neighborhood in
 all_months = sorted(pop_agg["STANDARD_YEAR_MONTH"].unique(), reverse=True)
 ym_labels = [f"{str(m)[:4]}년 {int(str(m)[4:6])}월" for m in all_months]
 
-if "profile_ym_idx" not in st.session_state:
-    st.session_state.profile_ym_idx = 0
-if "p_ym_sel" not in st.session_state:
-    st.session_state.p_ym_sel = ym_labels[0]
 
 # ── 헤더 ──
-h_nb, h_prev, h_ym, h_next = st.columns([4, 0.5, 2, 0.5])
+h_nb, h_ym = st.columns([4, 2])
 with h_nb:
     selected = st.selectbox("동네", options, index=default_idx, label_visibility="collapsed")
-with h_prev:
-    if st.button("◀", key="p_prev", use_container_width=True, disabled=st.session_state.profile_ym_idx >= len(all_months) - 1):
-        st.session_state.profile_ym_idx += 1
-        st.session_state.p_ym_sel = ym_labels[st.session_state.profile_ym_idx]
-        st.rerun()
 with h_ym:
-    def _on_p_ym():
-        st.session_state.profile_ym_idx = ym_labels.index(st.session_state.p_ym_sel)
-    st.selectbox("년월", ym_labels, key="p_ym_sel", label_visibility="collapsed", on_change=_on_p_ym)
-    st.session_state.profile_ym_idx = ym_labels.index(st.session_state.p_ym_sel)
-with h_next:
-    if st.button("▶", key="p_next", use_container_width=True, disabled=st.session_state.profile_ym_idx <= 0):
-        st.session_state.profile_ym_idx -= 1
-        st.session_state.p_ym_sel = ym_labels[st.session_state.profile_ym_idx]
-        st.rerun()
+    selected_ym_label = st.selectbox("기준 년월", ym_labels, index=0, label_visibility="collapsed")
 
-selected_month = all_months[st.session_state.profile_ym_idx]
+selected_month = all_months[ym_labels.index(selected_ym_label)]
 
 sel_row = region_with_data[region_with_data["label"] == selected].iloc[0]
 dc = sel_row["district_code"]
