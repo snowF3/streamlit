@@ -10,10 +10,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 st.set_page_config(
-    page_title="동네 엑스레이",
+    page_title="인사이트 피드 | 동네 엑스레이",
     page_icon="🏙️",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 from data_loader import (
@@ -41,34 +41,10 @@ st.markdown("""<style>
 .block-container { padding-top: 1rem !important; padding-bottom: 0 !important; }
 [data-testid="stVerticalBlock"] { gap: 0.4rem !important; }
 [data-testid="stColumn"]:nth-child(2) [data-testid="stVerticalBlock"] { gap: 0.5rem !important; }
-[data-testid="stColumn"]:first-child [data-testid="stVerticalBlock"] { gap: 0 !important; }
-/* 사이드바 → 상단 가로 네비 */
-[data-testid="stSidebar"] {
-    top: 0 !important; height: auto !important; min-height: 0 !important;
-    position: fixed !important; left: 0 !important; right: 0 !important;
-    width: 100% !important; max-width: 100% !important;
-    z-index: 999 !important; padding: 6px 16px !important;
-    border-bottom: 1px solid rgba(128,128,128,0.1) !important;
-    border-right: none !important;
-}
-[data-testid="stSidebar"] > div { display: flex !important; flex-direction: row !important; align-items: center !important; gap: 4px !important; overflow-x: auto !important; }
-[data-testid="stSidebar"] [data-testid="stSidebarNav"] { display: flex !important; flex-direction: row !important; }
-[data-testid="stSidebar"] [data-testid="stSidebarNav"] ul { display: flex !important; flex-direction: row !important; gap: 4px !important; list-style: none !important; padding: 0 !important; margin: 0 !important; }
-[data-testid="stSidebar"] [data-testid="stSidebarNav"] li { margin: 0 !important; }
-[data-testid="stSidebar"] [data-testid="stSidebarNav"] a {
-    font-size: 13px !important; font-weight: 500 !important;
-    padding: 4px 12px !important; border-radius: 16px !important;
-    white-space: nowrap !important;
-}
-[data-testid="stSidebar"] [data-testid="stSidebarNav"] a:hover { background: rgba(99,102,241,0.08) !important; }
-/* 사이드바 닫기 버튼 숨기기 */
-[data-testid="stSidebar"] button[kind="header"] { display: none !important; }
-/* 시그널 카드 */
-.sig-card { transition: background 0.15s; border-radius: 0 6px 6px 0; }
-.sig-card:hover { background: rgba(128,128,128,0.06) !important; }
+[data-testid="stColumn"]:first-child [data-testid="stVerticalBlock"] { gap: 0.2rem !important; }
 .signal-header {
     font-size: 12px; font-weight: 700; padding: 8px 0 6px;
-    border-bottom: 1px solid rgba(128,128,128,0.12); margin-bottom: 14px;
+    border-bottom: 1px solid rgba(128,128,128,0.12); margin-bottom: 4px;
 }
 .kw-tag {
     display: inline-block; padding: 4px 10px; border-radius: 16px;
@@ -88,8 +64,6 @@ st.markdown("""<style>
 [data-testid="stExpander"] summary { font-size: 12px !important; padding: 4px 0 !important; }
 hr { margin: 10px 0 !important; }
 [data-testid="stTab"] button { font-size: 12px !important; padding: 4px 8px !important; }
-/* 시그널 버튼 컴팩트 */
-.sig-btn button { padding: 2px 6px !important; min-height: 0 !important; font-size: 11px !important; }
 </style>""", unsafe_allow_html=True)
 
 # ── 데이터 로드 ──
@@ -271,48 +245,51 @@ with col_left:
     else:
         filtered = list(signals)
 
+    # 시그널 라벨 생성
     month_groups: dict[str, list] = {}
     for s in filtered:
         month_groups.setdefault(s["month_label"], []).append(s)
 
-    signal_scroll = _container(height=380)
-    with signal_scroll:
-      for month_label, month_sigs in month_groups.items():
-        year = month_label[:4]
-        mon = month_label[5:]
-        st.markdown(f'<div class="signal-header">{year}년 {int(mon)}월</div>', unsafe_allow_html=True)
-
-        # 해당 월 전체 순위 계산
-        m_ym = month_sigs[0]["month"] if month_sigs else None
-        m_all = hp[hp["STANDARD_YEAR_MONTH"] == m_ym].sort_values("hotplace_score", ascending=False) if m_ym else pd.DataFrame()
-        rank_map = {row["DISTRICT_CODE"]: i + 1 for i, (_, row) in enumerate(m_all.iterrows())} if not m_all.empty else {}
+    # 순위 계산
+    for s in filtered:
+        m_all = hp[hp["STANDARD_YEAR_MONTH"] == s["month"]].sort_values("hotplace_score", ascending=False)
+        rank_map = {row["DISTRICT_CODE"]: i + 1 for i, (_, row) in enumerate(m_all.iterrows())}
         total_d = len(m_all)
+        rank = rank_map.get(s["dc"], 0)
+        if rank <= 3:
+            s["_rank"] = f"상위{rank}"
+        elif rank > total_d - 3:
+            s["_rank"] = f"하위{total_d - rank + 1}"
+        else:
+            s["_rank"] = f"{rank}/{total_d}"
 
-        for sig_item in month_sigs:
-            global_idx = signals.index(sig_item) if sig_item in signals else 0
-            is_selected = global_idx == st.session_state.selected_signal_idx
-            chg_prefix = "+" if sig_item["direction"] == "up" else ""
-            color = "#f04452" if sig_item["direction"] == "up" else "#3182f6"
-            dir_label = "상승" if sig_item["direction"] == "up" else "하락"
-            kw = sig_item["keywords"][0] if sig_item["keywords"] else ""
-            rank = rank_map.get(sig_item["dc"], 0)
-            if rank and total_d:
-                if rank <= 3:
-                    rank_str = f"상위 {rank}"
-                elif rank > total_d - 3:
-                    rank_str = f"하위 {total_d - rank + 1}"
-                else:
-                    rank_str = f"{rank}/{total_d}"
-            else:
-                rank_str = ""
+    # radio 옵션 생성
+    radio_options = []
+    for ml, sigs_in_month in month_groups.items():
+        year, mon = ml[:4], ml[5:]
+        radio_options.append(f"── {year}년 {int(mon)}월 ──")
+        for s in sigs_in_month:
+            cp = "+" if s["direction"] == "up" else ""
+            dl = "상승" if s["direction"] == "up" else "하락"
+            radio_options.append(f"{s['name']} · {cp}{s['composite']}점 {dl} · {s['_rank']}")
 
-            bg = "rgba(99,102,241,0.10)" if is_selected else "transparent"
-            bl = "3px solid #6366F1" if is_selected else "3px solid transparent"
+    # 현재 선택된 시그널의 radio 인덱스 찾기
+    sel_sig = signals[min(st.session_state.selected_signal_idx, len(signals) - 1)]
+    sel_cp = "+" if sel_sig["direction"] == "up" else ""
+    sel_dl = "상승" if sel_sig["direction"] == "up" else "하락"
+    sel_label = f"{sel_sig['name']} · {sel_cp}{sel_sig['composite']}점 {sel_dl} · {sel_sig.get('_rank', '')}"
+    default_idx = radio_options.index(sel_label) if sel_label in radio_options else 0
 
-            btn_label = f"{sig_item['name']} {chg_prefix}{sig_item['composite']}점 {dir_label}"
-            btn_type = "primary" if is_selected else "secondary"
-            if st.button(btn_label, key=f"sig_{global_idx}", use_container_width=True, type=btn_type):
-                st.session_state.selected_signal_idx = global_idx
+    chosen = st.radio("시그널", radio_options, index=default_idx, label_visibility="collapsed")
+
+    # 선택 반영 (구분선 헤더 무시)
+    if chosen and not chosen.startswith("──"):
+        for i, s in enumerate(signals):
+            cp = "+" if s["direction"] == "up" else ""
+            dl = "상승" if s["direction"] == "up" else "하락"
+            lbl = f"{s['name']} · {cp}{s['composite']}점 {dl} · {s.get('_rank', '')}"
+            if lbl == chosen and i != st.session_state.selected_signal_idx:
+                st.session_state.selected_signal_idx = i
                 st.rerun()
 
     # ── 근처 시그널 (parquet에서 직접 조회) ──
