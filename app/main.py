@@ -189,9 +189,8 @@ with h1:
         unsafe_allow_html=True,
     )
 with h2:
+    selected_ym_label = st.selectbox("기준 년월", ym_labels, index=0, label_visibility="collapsed")
 
-# 드롭다운 키 초기화
-selected_ym_label = st.selectbox("기준 년월", ym_labels, index=0)
 selected_ym = all_ym[ym_labels.index(selected_ym_label)]
 
 # 선택된 월 + 이전 3개월 시그널
