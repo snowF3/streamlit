@@ -245,17 +245,12 @@ with col_left:
     else:
         filtered = list(signals)
 
-    # 시그널 라벨 생성
-    month_groups: dict[str, list] = {}
-    for s in filtered:
-        month_groups.setdefault(s["month_label"], []).append(s)
-
     # 순위 계산
     for s in filtered:
         m_all = hp[hp["STANDARD_YEAR_MONTH"] == s["month"]].sort_values("hotplace_score", ascending=False)
-        rank_map = {row["DISTRICT_CODE"]: i + 1 for i, (_, row) in enumerate(m_all.iterrows())}
-        total_d = len(m_all)
-        rank = rank_map.get(s["dc"], 0)
+        rank_list = list(m_all["DISTRICT_CODE"])
+        total_d = len(rank_list)
+        rank = rank_list.index(s["dc"]) + 1 if s["dc"] in rank_list else 0
         if rank <= 3:
             s["_rank"] = f"상위{rank}"
         elif rank > total_d - 3:
@@ -263,34 +258,47 @@ with col_left:
         else:
             s["_rank"] = f"{rank}/{total_d}"
 
-    # radio 옵션 생성
-    radio_options = []
+    # selectbox로 시그널 선택
+    def _sig_label(s):
+        cp = "+" if s["direction"] == "up" else ""
+        m = s["month_label"]
+        return f"[{m[:4]}.{m[5:]}] {s['name']} {cp}{s['composite']}점 · {s['_rank']}"
+
+    options = [_sig_label(s) for s in filtered]
+    sel_idx = min(st.session_state.selected_signal_idx, len(filtered) - 1)
+    chosen = st.selectbox("시그널 선택", options, index=sel_idx, label_visibility="collapsed")
+
+    new_idx = options.index(chosen) if chosen in options else 0
+    if new_idx != st.session_state.selected_signal_idx:
+        st.session_state.selected_signal_idx = new_idx
+        st.rerun()
+
+    # 선택된 월의 시그널 요약
+    month_groups: dict[str, list] = {}
+    for s in filtered:
+        month_groups.setdefault(s["month_label"], []).append(s)
+
     for ml, sigs_in_month in month_groups.items():
         year, mon = ml[:4], ml[5:]
-        radio_options.append(f"── {year}년 {int(mon)}월 ──")
+        st.markdown(f'<div class="signal-header">{year}년 {int(mon)}월</div>', unsafe_allow_html=True)
         for s in sigs_in_month:
+            is_sel = (filtered.index(s) == st.session_state.selected_signal_idx)
             cp = "+" if s["direction"] == "up" else ""
+            color = "#f04452" if s["direction"] == "up" else "#3182f6"
             dl = "상승" if s["direction"] == "up" else "하락"
-            radio_options.append(f"{s['name']} · {cp}{s['composite']}점 {dl} · {s['_rank']}")
-
-    # 현재 선택된 시그널의 radio 인덱스 찾기
-    sel_sig = signals[min(st.session_state.selected_signal_idx, len(signals) - 1)]
-    sel_cp = "+" if sel_sig["direction"] == "up" else ""
-    sel_dl = "상승" if sel_sig["direction"] == "up" else "하락"
-    sel_label = f"{sel_sig['name']} · {sel_cp}{sel_sig['composite']}점 {sel_dl} · {sel_sig.get('_rank', '')}"
-    default_idx = radio_options.index(sel_label) if sel_label in radio_options else 0
-
-    chosen = st.radio("시그널", radio_options, index=default_idx, label_visibility="collapsed")
-
-    # 선택 반영 (구분선 헤더 무시)
-    if chosen and not chosen.startswith("──"):
-        for i, s in enumerate(signals):
-            cp = "+" if s["direction"] == "up" else ""
-            dl = "상승" if s["direction"] == "up" else "하락"
-            lbl = f"{s['name']} · {cp}{s['composite']}점 {dl} · {s.get('_rank', '')}"
-            if lbl == chosen and i != st.session_state.selected_signal_idx:
-                st.session_state.selected_signal_idx = i
-                st.rerun()
+            bg = "rgba(99,102,241,0.10)" if is_sel else "transparent"
+            bl = "3px solid #6366F1" if is_sel else "3px solid transparent"
+            st.markdown(
+                f'<div style="padding:5px 6px; background:{bg}; border-left:{bl}; border-radius:0 4px 4px 0; margin-bottom:2px;">'
+                f'  <div style="display:flex; justify-content:space-between;">'
+                f'    <span style="font-size:12px; font-weight:700;">{s["name"]}</span>'
+                f'    <span style="font-size:9px; opacity:0.3;">{s["_rank"]}</span></div>'
+                f'  <div style="font-size:11px;">'
+                f'    <span style="color:{color};">{cp}{s["composite"]}점 {dl}</span>'
+                f'    <span style="opacity:0.3;"> · {s["keywords"][0] if s["keywords"] else ""}</span></div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
 
     # ── 근처 시그널 (parquet에서 직접 조회) ──
     # ── 근처 시그널 (별도 컨테이너) ──
