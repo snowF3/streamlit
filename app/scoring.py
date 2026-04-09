@@ -153,3 +153,64 @@ def calc_purchasing_power(income_agg):
         scores["purchasing_power"] = 50.0
 
     return scores.set_index("DISTRICT_CODE")["purchasing_power"]
+
+
+def calc_derived_metrics(pop_time_df, card_agg_df, pop_agg_df, income_agg_df, year_month):
+    """
+    디지털 트윈용 파생지표 계산
+
+    Returns: DataFrame indexed by DISTRICT_CODE with columns:
+        total_pop, visit_ratio, day_night_ratio, sales_per_capita, consumption_hhi, avg_income
+    """
+    ym = year_month
+
+    # ── 총 유동인구 + 방문 비중 ──
+    pop_m = pop_agg_df[pop_agg_df["STANDARD_YEAR_MONTH"] == ym].copy()
+    pop_m["total_pop"] = (pop_m["RESIDENTIAL_POPULATION"]
+                          + pop_m["WORKING_POPULATION"]
+                          + pop_m["VISITING_POPULATION"])
+    pop_m["visit_ratio"] = pop_m["VISITING_POPULATION"] / pop_m["total_pop"].replace(0, np.nan)
+    pop_summary = pop_m.set_index("DISTRICT_CODE")[["total_pop", "visit_ratio", "VISITING_POPULATION"]]
+
+    # ── 낮밤 인구비 ──
+    pt = pop_time_df[(pop_time_df["STANDARD_YEAR_MONTH"] == ym)
+                     & (pop_time_df["WEEKDAY_WEEKEND"] == "W")].copy()
+    pt["total"] = pt["RESIDENTIAL_POPULATION"] + pt["WORKING_POPULATION"] + pt["VISITING_POPULATION"]
+    day_slots = ["T06", "T09", "T12"]
+    night_slots = ["T18", "T21", "T24"]
+    day_pop = pt[pt["TIME_SLOT"].isin(day_slots)].groupby("DISTRICT_CODE")["total"].sum()
+    night_pop = pt[pt["TIME_SLOT"].isin(night_slots)].groupby("DISTRICT_CODE")["total"].sum()
+    day_night = (day_pop / night_pop.replace(0, np.nan)).round(2)
+    day_night.name = "day_night_ratio"
+
+    # ── 1인당 매출 ──
+    card_m = card_agg_df[card_agg_df["STANDARD_YEAR_MONTH"] == ym].copy()
+    card_by_dc = card_m.set_index("DISTRICT_CODE")
+    sales_per_cap = (card_by_dc["TOTAL_SALES"] / pop_summary["total_pop"].replace(0, np.nan)).round(0)
+    sales_per_cap.name = "sales_per_capita"
+
+    # ── 소비 집중도 (HHI) ──
+    sales_cols = [c for c in card_m.columns if c.endswith("_SALES") and c != "TOTAL_SALES"]
+    hhi_rows = {}
+    for _, row in card_m.iterrows():
+        dc = row["DISTRICT_CODE"]
+        total = row["TOTAL_SALES"]
+        if total and total > 0:
+            hhi = sum((row[c] / total) ** 2 for c in sales_cols if pd.notna(row[c]))
+            hhi_rows[dc] = round(hhi, 4)
+    hhi_series = pd.Series(hhi_rows, name="consumption_hhi")
+    hhi_series.index.name = "DISTRICT_CODE"
+
+    # ── 평균 소득 ──
+    inc_m = income_agg_df[income_agg_df["STANDARD_YEAR_MONTH"] == ym].copy()
+    avg_income = inc_m.set_index("DISTRICT_CODE")["AVERAGE_INCOME"] if "AVERAGE_INCOME" in inc_m.columns else pd.Series(dtype=float)
+    avg_income.name = "avg_income"
+
+    # ── 병합 ──
+    result = pop_summary[["total_pop", "visit_ratio"]].copy()
+    result = result.join(day_night, how="left")
+    result = result.join(sales_per_cap, how="left")
+    result = result.join(hhi_series, how="left")
+    result = result.join(avg_income, how="left")
+    result = result.fillna(0)
+    return result

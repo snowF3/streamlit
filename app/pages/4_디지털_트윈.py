@@ -1,450 +1,417 @@
 """
-탭 4: 디지털 트윈 — 합성 시민이 움직이는 살아있는 지도 + 시뮬레이션
-데이터 범위: 중구, 영등포구, 서초구 (118개 법정동) ???? 맞아?
+탭 4: 디지털 트윈 — 시간대별 도시 흐름 시각화 + What-if 시뮬레이션
+데이터 범위: 중구, 영등포구, 서초구 (118개 법정동)
 """
 import streamlit as st
+import pydeck as pdk
 import pandas as pd
 import numpy as np
-import pydeck as pdk
-import json
+import plotly.graph_objects as go
+import plotly.express as px
 import sys
-
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from data_loader import (
-    load_geojson, load_region_master, load_population_time,
-    load_card_sales_time, load_income_agg, load_income_detail,
-    load_card_sales_agg, load_population_agg
+    load_region_master, load_population_agg, load_population_time,
+    load_card_sales_agg, load_income_agg, load_district_centroids,
+    get_latest_year_month,
 )
-from charts import TIME_SLOT_KOR, LIFESTYLE_KOR, CATEGORY_KOR
+from scoring import calc_derived_metrics, normalize_series
+from simulation import StatisticalEngine, INDUSTRY_PARAMS, SimulationResult
+from charts import TIME_SLOT_KOR
 from chat_ui import render_chat_panel
 
-st.set_page_config(page_title="디지털 트윈 ", page_icon="🌆", layout="wide")
-st.title("🌆 디지털 트윈 test 기모찌 — 살아있는 서울")
-st.caption("데이터 범위 test 기모찌: 서울 중구 · 영등포구 · 서초구 (118개 법정동)")
+st.set_page_config(page_title="디지털 트윈", page_icon="🏙️", layout="wide")
+st.title("🏙️ 디지털 트윈")
+st.caption("서울 법정동 시간대별 도시 흐름 시뮬레이션 · 데이터 범위: 중구 · 영등포구 · 서초구")
 
-# ── 색상 팔레트 (라이프스타일별) ──
-LIFESTYLE_COLORS = {
-    "L01": [99, 110, 250, 180],     # 싱글 - 파란
-    "L02": [0, 204, 150, 180],      # 신혼 - 초록
-    "L03": [255, 215, 0, 180],      # 영유아가족 - 노란
-    "L04": [255, 127, 14, 180],     # 청소년가족 - 주황
-    "L05": [148, 103, 189, 180],    # 성인자녀 - 보라
-    "L06": [239, 85, 59, 180],      # 실버 - 빨간
+# ══════════════════════════════════════
+# 데이터 로드
+# ══════════════════════════════════════
+try:
+    region_master = load_region_master()
+    pop_agg = load_population_agg()
+    pop_time = load_population_time()
+    card_agg = load_card_sales_agg()
+    income_agg = load_income_agg()
+    centroids = load_district_centroids()
+except Exception as e:
+    st.error(f"데이터 로드 실패: {e}")
+    st.stop()
+
+# 사용 가능한 법정동
+data_districts = set(pop_agg["DISTRICT_CODE"].unique())
+centroids = centroids[centroids["district_code"].isin(data_districts)].copy()
+
+# 기준 년월
+all_months = sorted(pop_agg["STANDARD_YEAR_MONTH"].unique(), reverse=True)
+selected_month = all_months[0]
+
+# 파생지표 계산
+derived = calc_derived_metrics(pop_time, card_agg, pop_agg, income_agg, selected_month)
+
+# ══════════════════════════════════════
+# [A] 컨트롤 바
+# ══════════════════════════════════════
+time_slots = list(TIME_SLOT_KOR.keys())
+time_labels = list(TIME_SLOT_KOR.values())
+
+ctrl1, ctrl2, ctrl3, ctrl4 = st.columns([2, 1, 1, 1])
+with ctrl1:
+    selected_time_label = st.select_slider(
+        "시간대", options=time_labels, value="점심(12~15)")
+    selected_time = time_slots[time_labels.index(selected_time_label)]
+with ctrl2:
+    weekday_label = st.radio("주중/주말", ["주중", "주말"], horizontal=True)
+    weekday_code = "W" if weekday_label == "주중" else "H"
+with ctrl3:
+    metric_options = ["총유동인구", "방문인구", "1인당매출", "낮밤인구비"]
+    selected_metric = st.selectbox("지표 선택", metric_options)
+with ctrl4:
+    is_3d = st.toggle("3D 보기", value=True)
+
+# ══════════════════════════════════════
+# 시간대별 데이터 필터링
+# ══════════════════════════════════════
+pt_filtered = pop_time[
+    (pop_time["STANDARD_YEAR_MONTH"] == selected_month)
+    & (pop_time["WEEKDAY_WEEKEND"] == weekday_code)
+    & (pop_time["TIME_SLOT"] == selected_time)
+].copy()
+pt_filtered["total_pop"] = (pt_filtered["RESIDENTIAL_POPULATION"]
+                            + pt_filtered["WORKING_POPULATION"]
+                            + pt_filtered["VISITING_POPULATION"])
+time_by_dc = pt_filtered.set_index("DISTRICT_CODE")
+
+# 지표별 값 매핑
+metric_col_map = {
+    "총유동인구": "total_pop",
+    "방문인구": "VISITING_POPULATION",
+    "1인당매출": "sales_per_capita",
+    "낮밤인구비": "day_night_ratio",
 }
+sel_col = metric_col_map[selected_metric]
 
-# ── 사이드바: 기준 년월 ──
-pop_agg_all = load_population_agg()
-all_months = sorted(pop_agg_all["STANDARD_YEAR_MONTH"].unique(), reverse=True)
-month_labels = [f"{str(m)[:4]}년 {str(m)[4:6]}월" for m in all_months]
-selected_month_label = st.sidebar.selectbox("기준 년월", month_labels, index=0)
-selected_month = all_months[month_labels.index(selected_month_label)]
-st.sidebar.caption(f"선택: {selected_month_label}")
+# ColumnLayer용 DataFrame 구성
+column_df = centroids.copy()
 
+if sel_col in ("total_pop", "VISITING_POPULATION"):
+    # 시간대별 데이터에서 가져옴
+    column_df = column_df.merge(
+        time_by_dc[[sel_col]].reset_index(),
+        left_on="district_code", right_on="DISTRICT_CODE", how="left"
+    ).drop(columns=["DISTRICT_CODE"], errors="ignore")
+    column_df[sel_col] = column_df[sel_col].fillna(0)
+else:
+    # 파생지표에서 가져옴
+    column_df = column_df.merge(
+        derived[[sel_col]].reset_index(),
+        left_on="district_code", right_on="DISTRICT_CODE", how="left"
+    ).drop(columns=["DISTRICT_CODE"], errors="ignore")
+    column_df[sel_col] = column_df[sel_col].fillna(0)
 
-# ── 법정동 중심좌표 계산 (데이터 있는 법정동만) ──
-@st.cache_data
-def get_district_centers():
-    """GeoJSON에서 데이터 있는 법정동의 중심좌표 추출"""
-    geojson = load_geojson()
-    pop_agg = load_population_agg()
-    data_districts = set(pop_agg["DISTRICT_CODE"].unique())
+# elevation 정규화 (0 ~ 5000)
+vals = column_df[sel_col]
+min_v, max_v = vals.min(), vals.max()
+rng = max_v - min_v if max_v != min_v else 1
+column_df["elevation"] = ((vals - min_v) / rng * 5000).fillna(0)
+column_df["metric_value"] = vals.round(1)
 
-    centers = {}
-    for feature in geojson["features"]:
-        dc = feature["properties"]["district_code"]
-        if dc not in data_districts:
-            continue
-        geom = feature["geometry"]
-        if "coordinates" not in geom:
-            continue
-        coords = []
-        if geom["type"] == "MultiPolygon":
-            for polygon in geom["coordinates"]:
-                for ring in polygon:
-                    coords.extend(ring)
-        elif geom["type"] == "Polygon":
-            for ring in geom["coordinates"]:
-                coords.extend(ring)
+# 색상 (YlOrRd)
+colors = []
+for v in vals:
+    norm = (v - min_v) / rng if rng > 0 else 0
+    r = 255
+    g = int(255 * (1 - norm * 0.8))
+    b = int(255 * (1 - norm))
+    colors.append([r, g, b, int(160 + norm * 60)])
+column_df["fill_color"] = colors
 
-        if coords:
-            lons = [c[0] for c in coords]
-            lats = [c[1] for c in coords]
-            centers[dc] = {
-                "lon": sum(lons) / len(lons),
-                "lat": sum(lats) / len(lats),
-                "lon_min": min(lons), "lon_max": max(lons),
-                "lat_min": min(lats), "lat_max": max(lats),
-            }
-    return centers
+# ══════════════════════════════════════
+# [B] 메인 시각화: 3D 맵 + 퀵 프로파일
+# ══════════════════════════════════════
+map_col, profile_col = st.columns([3, 1])
 
-
-@st.cache_data
-def generate_synthetic_population(_selected_month, sample_rate=0.05, max_agents=15000):
-    """합성 인구 생성 — 자산소득 CUSTOMER_COUNT 기반"""
-    income_detail = load_income_detail()
-    centers = get_district_centers()
-
-    # 선택된 년월 (없으면 최신)
-    available = income_detail["STANDARD_YEAR_MONTH"].unique()
-    if _selected_month in available:
-        use_month = _selected_month
-    else:
-        use_month = max(available)
-
-    df = income_detail[income_detail["STANDARD_YEAR_MONTH"] == use_month].copy()
-
-    agents = []
-    np.random.seed(42)
-    lifestyles = ["L01", "L02", "L03", "L04", "L05", "L06"]
-
-    for _, row in df.iterrows():
-        dc = str(row["DISTRICT_CODE"])
-        if dc not in centers:
-            continue
-
-        customer_count = int(row.get("CUSTOMER_COUNT", 0))
-        if customer_count <= 0:
-            continue
-
-        n_agents = max(1, int(customer_count * sample_rate))
-        center = centers[dc]
-        gender = row["GENDER"]
-        age_group = int(row["AGE_GROUP"]) if pd.notna(row["AGE_GROUP"]) else 30
-
-        # 연령 기반 라이프스타일 확률
-        if age_group < 25:
-            ls_prob = [0.60, 0.05, 0.02, 0.05, 0.25, 0.03]
-        elif age_group < 35:
-            ls_prob = [0.35, 0.25, 0.20, 0.05, 0.10, 0.05]
-        elif age_group < 45:
-            ls_prob = [0.10, 0.10, 0.25, 0.30, 0.15, 0.10]
-        elif age_group < 55:
-            ls_prob = [0.08, 0.05, 0.10, 0.25, 0.35, 0.17]
-        else:
-            ls_prob = [0.10, 0.02, 0.03, 0.05, 0.30, 0.50]
-
-        for i in range(n_agents):
-            lon = np.random.uniform(center["lon_min"], center["lon_max"])
-            lat = np.random.uniform(center["lat_min"], center["lat_max"])
-            age = np.random.randint(age_group, min(age_group + 5, 90))
-            lifestyle = np.random.choice(lifestyles, p=ls_prob)
-
-            agents.append({
-                "district_code": dc,
-                "home_lon": lon,
-                "home_lat": lat,
-                "lon": lon,
-                "lat": lat,
-                "gender": gender,
-                "age": age,
-                "lifestyle": lifestyle,
-            })
-
-        if len(agents) >= max_agents:
-            break
-
-    return pd.DataFrame(agents)
-
-
-@st.cache_data
-def simulate_movement_cached(agents_json, time_slot):
-    """시간대에 따른 에이전트 위치 업데이트 (벡터화)"""
-    import io
-    df = pd.read_json(io.StringIO(agents_json))
-    n = len(df)
-    np.random.seed(hash(time_slot) % 2**31)
-
-    centers = get_district_centers()
-
-    # 직장 밀집 법정동 상위 (3개 구 내에서)
-    pop_agg = load_population_agg()
-    latest = pop_agg["STANDARD_YEAR_MONTH"].max()
-    pop_latest = pop_agg[pop_agg["STANDARD_YEAR_MONTH"] == latest]
-    work_top = pop_latest.nlargest(15, "WORKING_POPULATION")["DISTRICT_CODE"].tolist()
-    work_centers_list = [centers[dc] for dc in work_top if dc in centers]
-
-    if not work_centers_list:
-        work_centers_list = [list(centers.values())[0]]
-
-    if time_slot in ["T06", "T24", "T21"]:
-        # 집 근처
-        df["lon"] = df["home_lon"] + np.random.normal(0, 0.0008, n)
-        df["lat"] = df["home_lat"] + np.random.normal(0, 0.0008, n)
-
-    elif time_slot in ["T09", "T15"]:
-        # 직장인 이동
-        is_worker = (df["age"] >= 25) & (df["age"] <= 60) & (np.random.random(n) < 0.65)
-        # 비직장인 → 집 근처
-        df.loc[~is_worker, "lon"] = df.loc[~is_worker, "home_lon"] + np.random.normal(0, 0.001, (~is_worker).sum())
-        df.loc[~is_worker, "lat"] = df.loc[~is_worker, "home_lat"] + np.random.normal(0, 0.001, (~is_worker).sum())
-        # 직장인 → 직장 밀집 지역
-        worker_count = is_worker.sum()
-        if worker_count > 0:
-            wc_indices = np.random.randint(0, len(work_centers_list), worker_count)
-            for i, (idx, _) in enumerate(df[is_worker].iterrows()):
-                wc = work_centers_list[wc_indices[i]]
-                df.loc[idx, "lon"] = np.random.uniform(wc["lon_min"], wc["lon_max"])
-                df.loc[idx, "lat"] = np.random.uniform(wc["lat_min"], wc["lat_max"])
-
-    elif time_slot == "T12":
-        # 점심 — 직장 주변 약간 분산
-        is_worker = (df["age"] >= 25) & (df["age"] <= 60) & (np.random.random(n) < 0.55)
-        df.loc[~is_worker, "lon"] = df.loc[~is_worker, "home_lon"] + np.random.normal(0, 0.002, (~is_worker).sum())
-        df.loc[~is_worker, "lat"] = df.loc[~is_worker, "home_lat"] + np.random.normal(0, 0.002, (~is_worker).sum())
-        worker_count = is_worker.sum()
-        if worker_count > 0:
-            wc_indices = np.random.randint(0, len(work_centers_list), worker_count)
-            for i, (idx, _) in enumerate(df[is_worker].iterrows()):
-                wc = work_centers_list[wc_indices[i]]
-                df.loc[idx, "lon"] = np.random.uniform(wc["lon_min"], wc["lon_max"])
-                df.loc[idx, "lat"] = np.random.uniform(wc["lat_min"], wc["lat_max"])
-
-    elif time_slot == "T18":
-        # 저녁 — 귀가 + 일부 외출
-        going_home = np.random.random(n) < 0.7
-        df.loc[going_home, "lon"] = df.loc[going_home, "home_lon"] + np.random.normal(0, 0.001, going_home.sum())
-        df.loc[going_home, "lat"] = df.loc[going_home, "home_lat"] + np.random.normal(0, 0.001, going_home.sum())
-        out_count = (~going_home).sum()
-        if out_count > 0:
-            wc_indices = np.random.randint(0, len(work_centers_list), out_count)
-            for i, (idx, _) in enumerate(df[~going_home].iterrows()):
-                wc = work_centers_list[wc_indices[i]]
-                df.loc[idx, "lon"] = np.random.uniform(wc["lon_min"], wc["lon_max"])
-                df.loc[idx, "lat"] = np.random.uniform(wc["lat_min"], wc["lat_max"])
-
-    # 색상 추가
-    df["r"] = df["lifestyle"].map(lambda ls: LIFESTYLE_COLORS.get(ls, [128,128,128,180])[0])
-    df["g"] = df["lifestyle"].map(lambda ls: LIFESTYLE_COLORS.get(ls, [128,128,128,180])[1])
-    df["b"] = df["lifestyle"].map(lambda ls: LIFESTYLE_COLORS.get(ls, [128,128,128,180])[2])
-
-    return df
-
-
-# ══════════════════════════════════════════════
-# 메인 UI
-# ══════════════════════════════════════════════
-
-tab_twin, tab_sim = st.tabs(["🌆 살아있는 지도", "🧪 시뮬레이션"])
-
-# ── 탭 1: 살아있는 지도 ──
-with tab_twin:
-    st.subheader("시간대 슬라이더로 시민의 움직임을 관찰하세요")
-
-    time_slots = ["T06", "T09", "T12", "T15", "T18", "T21", "T24"]
-    time_labels = [TIME_SLOT_KOR[t] for t in time_slots]
-
-    col_slider, col_legend = st.columns([4, 1])
-    with col_slider:
-        time_idx = st.select_slider(
-            "시간대",
-            options=list(range(len(time_slots))),
-            format_func=lambda x: time_labels[x],
-            value=2
-        )
-    with col_legend:
-        st.markdown("**라이프스타일 범례**")
-        for ls, color in LIFESTYLE_COLORS.items():
-            name = LIFESTYLE_KOR.get(ls, ls)
-            r, g, b, _ = color
-            st.markdown(f'<span style="color:rgb({r},{g},{b})">●</span> {name}', unsafe_allow_html=True)
-
-    selected_time = time_slots[time_idx]
-
-    with st.spinner("합성 인구 생성 중... (최초 1회)"):
-        agents_df = generate_synthetic_population(selected_month)
-
-    with st.spinner(f"{TIME_SLOT_KOR[selected_time]} 시뮬레이션 중..."):
-        moved = simulate_movement_cached(agents_df.to_json(), selected_time)
-
-    # ── Pydeck 지도 (Carto 베이스맵 — 토큰 불필요) ──
-    # 3개 구 중심으로 뷰 설정
-    centers = get_district_centers()
-    all_lats = [c["lat"] for c in centers.values()]
-    all_lons = [c["lon"] for c in centers.values()]
-    center_lat = sum(all_lats) / len(all_lats) if all_lats else 37.51
-    center_lon = sum(all_lons) / len(all_lons) if all_lons else 126.95
+with map_col:
+    st.subheader(f"서울 법정동 — {selected_metric} ({selected_time_label}, {weekday_label})")
 
     layer = pdk.Layer(
-        "ScatterplotLayer",
-        data=moved[["lon", "lat", "r", "g", "b", "age", "gender", "lifestyle"]],
+        "ColumnLayer",
+        data=column_df,
         get_position=["lon", "lat"],
-        get_fill_color=["r", "g", "b", 180],
-        get_radius=40,
-        radius_min_pixels=2,
-        radius_max_pixels=6,
+        get_elevation="elevation",
+        elevation_scale=50,
+        get_fill_color="fill_color",
+        radius=200,
         pickable=True,
-        opacity=0.7,
+        auto_highlight=True,
+        extruded=is_3d,
     )
 
-    view_state = pdk.ViewState(
-        latitude=center_lat,
-        longitude=center_lon,
-        zoom=12.5,
-        pitch=0,
+    view = pdk.ViewState(
+        latitude=37.51, longitude=126.95, zoom=11.5,
+        pitch=45 if is_3d else 0,
+        bearing=-27 if is_3d else 0,
     )
 
     deck = pdk.Deck(
         layers=[layer],
-        initial_view_state=view_state,
-        tooltip={"text": "나이: {age}세 | 성별: {gender} | 라이프스타일: {lifestyle}"},
+        initial_view_state=view,
+        tooltip={"text": "{name}\n" + f"{selected_metric}: " + "{metric_value}"},
         map_provider="carto",
-        map_style="dark",
+        map_style="light",
     )
-
     st.pydeck_chart(deck)
 
-    col_info1, col_info2, col_info3 = st.columns(3)
-    with col_info1:
-        st.metric("합성 시민 수", f"{len(moved):,}명")
-    with col_info2:
-        st.metric("시간대", TIME_SLOT_KOR[selected_time])
-    with col_info3:
-        st.metric("기준 월", selected_month_label)
+with profile_col:
+    st.subheader("📊 퀵 프로파일")
+    # 상위 1위 동네 표시
+    if not column_df.empty:
+        top_dc = column_df.nlargest(1, sel_col).iloc[0]
+        top_code = top_dc["district_code"]
+        st.markdown(f"**{top_dc['name']}** (최고값)")
 
-# ── 탭 2: 시뮬레이션 ──
+        if top_code in derived.index:
+            dm = derived.loc[top_code]
+            st.metric("총유동인구", f"{dm['total_pop']:,.0f}명")
+            st.metric("1인당매출", f"{dm['sales_per_capita']:,.0f}원")
+            st.metric("낮밤인구비", f"{dm['day_night_ratio']:.2f}")
+            hhi_val = dm['consumption_hhi']
+            hhi_label = "다양" if hhi_val < 0.05 else ("보통" if hhi_val < 0.15 else "편중")
+            st.metric("소비집중도(HHI)", f"{hhi_val:.3f} ({hhi_label})")
+
+        # 미니 시간대별 차트
+        dc_time_all = pop_time[
+            (pop_time["STANDARD_YEAR_MONTH"] == selected_month)
+            & (pop_time["WEEKDAY_WEEKEND"] == weekday_code)
+            & (pop_time["DISTRICT_CODE"] == top_code)
+        ].copy()
+        if not dc_time_all.empty:
+            dc_time_all["total"] = (dc_time_all["RESIDENTIAL_POPULATION"]
+                                    + dc_time_all["WORKING_POPULATION"]
+                                    + dc_time_all["VISITING_POPULATION"])
+            dc_chart = dc_time_all.set_index("TIME_SLOT").reindex(time_slots)
+            dc_chart["시간대"] = [TIME_SLOT_KOR.get(t, t) for t in dc_chart.index]
+            fig_mini = go.Figure()
+            fig_mini.add_trace(go.Scatter(
+                x=dc_chart["시간대"], y=dc_chart["RESIDENTIAL_POPULATION"],
+                name="거주", fill="tozeroy", line=dict(width=1),
+            ))
+            fig_mini.add_trace(go.Scatter(
+                x=dc_chart["시간대"], y=dc_chart["WORKING_POPULATION"],
+                name="직장", fill="tonexty", line=dict(width=1),
+            ))
+            fig_mini.add_trace(go.Scatter(
+                x=dc_chart["시간대"], y=dc_chart["VISITING_POPULATION"],
+                name="방문", fill="tonexty", line=dict(width=1),
+            ))
+            fig_mini.update_layout(
+                height=200, margin=dict(l=0, r=0, t=20, b=0),
+                showlegend=True, legend=dict(orientation="h", y=-0.3),
+                xaxis=dict(tickfont=dict(size=9)),
+                yaxis=dict(tickfont=dict(size=9)),
+            )
+            st.plotly_chart(fig_mini, use_container_width=True)
+
+# ══════════════════════════════════════
+# [C] 분석 패널: 히트맵 + 주중/주말 비교
+# ══════════════════════════════════════
+st.divider()
+anal_col1, anal_col2 = st.columns(2)
+
+with anal_col1:
+    st.subheader("🔥 시간대별 유동인구 히트맵")
+    # 해당 월+주중/주말 전체 시간대 데이터
+    pt_heatmap = pop_time[
+        (pop_time["STANDARD_YEAR_MONTH"] == selected_month)
+        & (pop_time["WEEKDAY_WEEKEND"] == weekday_code)
+    ].copy()
+    pt_heatmap["total"] = (pt_heatmap["RESIDENTIAL_POPULATION"]
+                           + pt_heatmap["WORKING_POPULATION"]
+                           + pt_heatmap["VISITING_POPULATION"])
+
+    # Top 20 동네 (전체 시간대 합)
+    dc_total = pt_heatmap.groupby("DISTRICT_CODE")["total"].sum().nlargest(20)
+    top20_codes = dc_total.index.tolist()
+
+    # 이름 매핑
+    name_map = centroids.set_index("district_code")["name"].to_dict()
+
+    pivot = pt_heatmap[pt_heatmap["DISTRICT_CODE"].isin(top20_codes)].pivot_table(
+        index="DISTRICT_CODE", columns="TIME_SLOT", values="total", aggfunc="sum"
+    )
+    # 시간대 순서 정렬
+    ordered_slots = [s for s in time_slots if s in pivot.columns]
+    pivot = pivot.reindex(columns=ordered_slots).fillna(0)
+    # Top 20 순서 유지
+    pivot = pivot.reindex(top20_codes)
+
+    pivot.index = [name_map.get(dc, dc) for dc in pivot.index]
+    pivot.columns = [TIME_SLOT_KOR.get(s, s) for s in pivot.columns]
+
+    fig_heat = px.imshow(
+        pivot, aspect="auto",
+        color_continuous_scale="YlOrRd",
+        labels=dict(x="시간대", y="동네", color="유동인구"),
+    )
+    fig_heat.update_layout(height=450, margin=dict(l=0, r=0, t=10, b=0))
+    st.plotly_chart(fig_heat, use_container_width=True)
+
+with anal_col2:
+    st.subheader("📊 주중 vs 주말 비교 (Top 10)")
+    # 주중/주말 전체 시간대 합산
+    pt_compare = pop_time[pop_time["STANDARD_YEAR_MONTH"] == selected_month].copy()
+    pt_compare["total"] = (pt_compare["RESIDENTIAL_POPULATION"]
+                           + pt_compare["WORKING_POPULATION"]
+                           + pt_compare["VISITING_POPULATION"])
+    wk_vs_we = pt_compare.groupby(["DISTRICT_CODE", "WEEKDAY_WEEKEND"])["total"].sum().unstack(fill_value=0)
+
+    if "W" in wk_vs_we.columns and "H" in wk_vs_we.columns:
+        wk_vs_we["합계"] = wk_vs_we["W"] + wk_vs_we["H"]
+        top10_codes = wk_vs_we.nlargest(10, "합계").index.tolist()
+        top10_data = wk_vs_we.loc[top10_codes].copy()
+        top10_data["name"] = [name_map.get(dc, dc) for dc in top10_data.index]
+
+        fig_comp = go.Figure()
+        fig_comp.add_trace(go.Bar(
+            name="주중", x=top10_data["name"], y=top10_data["W"],
+            marker_color="#6366F1",
+        ))
+        fig_comp.add_trace(go.Bar(
+            name="주말", x=top10_data["name"], y=top10_data["H"],
+            marker_color="#F59E0B",
+        ))
+        fig_comp.update_layout(
+            barmode="group", height=450,
+            margin=dict(l=0, r=0, t=10, b=0),
+            legend=dict(orientation="h", y=1.05),
+            xaxis=dict(tickangle=-45, tickfont=dict(size=9)),
+        )
+        st.plotly_chart(fig_comp, use_container_width=True)
+    else:
+        st.info("주중/주말 비교 데이터가 부족합니다.")
+
+# ══════════════════════════════════════
+# [D] 하단 탭
+# ══════════════════════════════════════
+st.divider()
+tab_insight, tab_sim, tab_ai = st.tabs(["📈 현황 인사이트", "🧪 What-if 시뮬레이션", "🤖 AI 예측 (Coming Soon)"])
+
+# ── 탭1: 현황 인사이트 ──
+with tab_insight:
+    ins1, ins2, ins3 = st.columns(3)
+
+    with ins1:
+        st.markdown("**🏢 오피스가 (낮밤인구비 Top 5)**")
+        if "day_night_ratio" in derived.columns:
+            top5_dn = derived.nlargest(5, "day_night_ratio")[["day_night_ratio"]].copy()
+            top5_dn.index = [name_map.get(dc, dc) for dc in top5_dn.index]
+            top5_dn.columns = ["낮밤인구비"]
+            st.dataframe(top5_dn, use_container_width=True)
+
+    with ins2:
+        st.markdown("**🛍️ 상업/관광 (방문비중 Top 5)**")
+        if "visit_ratio" in derived.columns:
+            top5_vr = derived.nlargest(5, "visit_ratio")[["visit_ratio"]].copy()
+            top5_vr.index = [name_map.get(dc, dc) for dc in top5_vr.index]
+            top5_vr["visit_ratio"] = (top5_vr["visit_ratio"] * 100).round(1)
+            top5_vr.columns = ["방문비중(%)"]
+            st.dataframe(top5_vr, use_container_width=True)
+
+    with ins3:
+        st.markdown("**🎯 소비특화 (HHI Top 5)**")
+        if "consumption_hhi" in derived.columns:
+            top5_hhi = derived.nlargest(5, "consumption_hhi")[["consumption_hhi"]].copy()
+            top5_hhi.index = [name_map.get(dc, dc) for dc in top5_hhi.index]
+            top5_hhi.columns = ["소비집중도"]
+            st.dataframe(top5_hhi, use_container_width=True)
+
+# ── 탭2: What-if 시뮬레이션 ──
 with tab_sim:
-    st.subheader("🧪 '만약에' 시뮬레이션")
-    st.markdown("법정동을 선택하고, 업종을 지정하면 예상 매출을 시뮬레이션합니다.")
-    st.caption(f"기준: {selected_month_label}")
+    st.markdown("**동네에 가게를 열면?** 유동인구 · 소득 · 경쟁 데이터 기반 예상 매출을 시뮬레이션합니다.")
 
-    region_master = load_region_master()
-    pop_agg_sim = load_population_agg()
-    data_districts_sim = set(pop_agg_sim["DISTRICT_CODE"].unique())
-    region_with_data = region_master[region_master["district_code"].isin(data_districts_sim)].copy()
-    region_with_data["label"] = region_with_data["city_kor"] + " " + region_with_data["district_kor"]
+    # 동네 리스트 구성
+    district_list = centroids[["district_code", "name"]].sort_values("name")
+    district_labels = district_list["name"].tolist()
+    district_codes = district_list["district_code"].tolist()
 
-    col_sim1, col_sim2 = st.columns(2)
-    with col_sim1:
-        selected_area = st.selectbox(
-            "📍 위치 선택 (중구/영등포구/서초구)",
-            region_with_data.sort_values("label")["label"].tolist()
+    with st.form("sim_form"):
+        sf1, sf2, sf3 = st.columns(3)
+        with sf1:
+            sim_district_label = st.selectbox("동네 선택", district_labels)
+        with sf2:
+            sim_industry = st.selectbox("업종", list(INDUSTRY_PARAMS.keys()))
+        with sf3:
+            sim_rent = st.slider("예상 월 임대료(만원)", 100, 2000, 500, step=50)
+        submitted = st.form_submit_button("🚀 시뮬레이션 실행", use_container_width=True)
+
+    if submitted:
+        sim_dc = district_codes[district_labels.index(sim_district_label)]
+        engine = StatisticalEngine()
+        result = engine.simulate(
+            district_code=sim_dc,
+            industry=sim_industry,
+            pop_time_df=pop_time,
+            pop_agg_df=pop_agg,
+            income_agg_df=income_agg,
+            derived_metrics=derived,
+            year_month=selected_month,
+            rent=sim_rent,
         )
-    with col_sim2:
-        business_type = st.selectbox(
-            "🏪 업종 선택",
-            ["카페", "음식점", "미용실", "편의점", "의류매장"]
-        )
 
-    sel_row = region_with_data[region_with_data["label"] == selected_area].iloc[0]
-    sim_dc = sel_row["district_code"]
+        st.markdown("---")
+        r1, r2, r3 = st.columns(3)
 
-    if st.button("🚀 시뮬레이션 실행", type="primary"):
-        with st.spinner("시뮬레이션 중..."):
-            pop_time = load_population_time()
-            card_time = load_card_sales_time()
+        with r1:
+            st.markdown("##### 💰 예상 월매출")
+            st.metric("중간 추정", f"{result.monthly_revenue_mid:,}만원")
+            st.caption(f"범위: {result.monthly_revenue_low:,} ~ {result.monthly_revenue_high:,}만원")
+            if result.monthly_revenue_mid > 0:
+                profit = result.monthly_revenue_mid - sim_rent
+                delta_color = "normal" if profit > 0 else "inverse"
+                st.metric("임대료 차감 후", f"{profit:,}만원",
+                          delta=f"임대료 {sim_rent:,}만원", delta_color=delta_color)
 
-            # 업종별 매출 비중으로 소비율 추정
-            business_sales_col = {
-                "카페": "COFFEE", "음식점": "FOOD", "미용실": "BEAUTY",
-                "편의점": "SMALL_RETAIL_STORE", "의류매장": "CLOTHING_ACCESSORIES",
-            }
-            biz_key = business_sales_col.get(business_type, "COFFEE")
+        with r2:
+            st.markdown("##### ⏰ 피크 시간대 & 고객층")
+            if result.peak_hours:
+                for i, ph in enumerate(result.peak_hours, 1):
+                    st.markdown(f"{i}. {ph}")
+            st.markdown(f"**주 고객층:** {result.main_customer}")
 
-            # 해당 법정동 유동인구 (선택된 월)
-            pop_district = pop_time[
-                (pop_time["DISTRICT_CODE"] == sim_dc) &
-                (pop_time["STANDARD_YEAR_MONTH"] == selected_month) &
-                (pop_time["WEEKDAY_WEEKEND"] == "W")
-            ]
+        with r3:
+            st.markdown("##### ⚠️ 리스크 요인")
+            for risk in result.risk_factors:
+                st.markdown(f"- {risk}")
 
-            # 카드매출
-            card_district = card_time[
-                (card_time["DISTRICT_CODE"] == sim_dc) &
-                (card_time["STANDARD_YEAR_MONTH"] == selected_month)
-            ]
+        st.caption("⚠️ 통계 기반 추정치이며, 실제 매출과 차이가 있을 수 있습니다.")
 
-            # 카드매출 기반 소비율
-            card_agg_district = load_card_sales_agg()
-            card_agg_d = card_agg_district[
-                (card_agg_district["DISTRICT_CODE"] == sim_dc) &
-                (card_agg_district["STANDARD_YEAR_MONTH"] == selected_month)
-            ]
-            biz_ratio = 0.05
-            if not card_agg_d.empty:
-                biz_col = f"{biz_key}_SALES"
-                if biz_col in card_agg_d.columns and "TOTAL_SALES" in card_agg_d.columns:
-                    total_s = card_agg_d["TOTAL_SALES"].values[0]
-                    if total_s > 0:
-                        biz_ratio = card_agg_d[biz_col].values[0] / total_s
+# ── 탭3: AI 예측 (Coming Soon) ──
+with tab_ai:
+    st.info(
+        "🤖 **AI 에이전트 기반 예측 (Phase 2 예정)**\n\n"
+        "MiroFish AI 에이전트가 수천 개의 가상 페르소나를 시뮬레이션하여 "
+        "미래 상권 변화를 예측합니다.\n\n"
+        "- 법정동별 AI 페르소나 생성\n"
+        "- 에이전트 간 상호작용 시뮬레이션\n"
+        "- 상권 변화 예측 보고서 자동 생성"
+    )
 
-            avg_price = {"카페": 5000, "음식점": 12000, "미용실": 25000,
-                         "편의점": 8000, "의류매장": 50000}
-            price = avg_price.get(business_type, 5000)
-            capture_rate = 0.05
-
-            time_slots_sim = ["T06", "T09", "T12", "T15", "T18", "T21"]
-            results = []
-            for ts in time_slots_sim:
-                ts_pop = pop_district[pop_district["TIME_SLOT"] == ts]
-                if ts_pop.empty:
-                    results.append({"시간대": TIME_SLOT_KOR.get(ts, ts), "유동인구": 0,
-                                    "소비율": f"{biz_ratio*100:.1f}%", "예상고객": 0, "예상매출(원)": 0})
-                    continue
-                total_pop = (ts_pop["RESIDENTIAL_POPULATION"].values[0]
-                             + ts_pop["WORKING_POPULATION"].values[0]
-                             + ts_pop["VISITING_POPULATION"].values[0])
-                est_customers = int(total_pop * biz_ratio * capture_rate)
-                results.append({
-                    "시간대": TIME_SLOT_KOR.get(ts, ts),
-                    "유동인구": int(total_pop),
-                    "소비율": f"{biz_ratio*100:.1f}%",
-                    "예상고객": est_customers,
-                    "예상매출(원)": est_customers * price,
-                })
-
-            results_df = pd.DataFrame(results)
-            daily_revenue = results_df["예상매출(원)"].sum()
-
-            # 주말 보정
-            pop_weekend = pop_time[
-                (pop_time["DISTRICT_CODE"] == sim_dc) &
-                (pop_time["STANDARD_YEAR_MONTH"] == selected_month) &
-                (pop_time["WEEKDAY_WEEKEND"] == "H")
-            ]
-            if not pop_weekend.empty and not pop_district.empty:
-                wk_total = pop_weekend[["RESIDENTIAL_POPULATION", "WORKING_POPULATION", "VISITING_POPULATION"]].sum().sum()
-                wd_total = pop_district[["RESIDENTIAL_POPULATION", "WORKING_POPULATION", "VISITING_POPULATION"]].sum().sum()
-                weekend_ratio = wk_total / max(wd_total, 1)
-            else:
-                weekend_ratio = 0.6
-
-            monthly_revenue = int(daily_revenue * 22 + daily_revenue * weekend_ratio * 8)
-
-        # 결과 표시
-        st.divider()
-        col_r1, col_r2, col_r3 = st.columns(3)
-        with col_r1:
-            st.metric("📅 월 예상 매출", f"{monthly_revenue/1e4:,.0f}만원")
-        with col_r2:
-            st.metric("📊 평일 일 매출", f"{daily_revenue/1e4:,.0f}만원")
-        with col_r3:
-            st.metric("🏖️ 주말 비율", f"평일 대비 {weekend_ratio*100:.0f}%")
-
-        st.subheader("⏰ 시간대별 상세")
-        st.dataframe(results_df.reset_index(drop=True), use_container_width=True)
-
-        # 인사이트
-        st.subheader("💡 AI 인사이트")
-        peak = results_df.nlargest(1, "예상고객")
-        peak_time = peak["시간대"].values[0] if not peak.empty else "-"
-
-        insights = [f"**피크 시간대**: {peak_time}"]
-        if weekend_ratio < 0.5:
-            insights.append("⚠️ 주말 유동인구가 평일의 50% 미만 — 주말 집객 전략 필요")
-        if monthly_revenue > 50_000_000:
-            insights.append(f"🟢 월 {monthly_revenue/1e4:,.0f}만원 — 높은 매출 잠재력")
-        elif monthly_revenue > 30_000_000:
-            insights.append(f"🟡 월 {monthly_revenue/1e4:,.0f}만원 — 차별화 전략 필요")
-        else:
-            insights.append(f"🔴 월 {monthly_revenue/1e4:,.0f}만원 — 유동인구 부족 주의")
-
-        for ins in insights:
-            st.markdown(f"- {ins}")
-
-# Build page context for chat panel
-_num_agents = len(agents_df) if 'agents_df' in dir() else 0
-page_context = f"디지털 트윈 - 기준: {selected_month_label}, 시간대: {TIME_SLOT_KOR.get(selected_time, selected_time)}, 합성 시민 수: {_num_agents:,}명"
-
-render_chat_panel(current_tab="디지털 트윈", selected_district=None, selected_month=str(selected_month), page_context=page_context)
+# ══════════════════════════════════════
+# [E] AI 채팅
+# ══════════════════════════════════════
+_top3 = column_df.nlargest(3, sel_col)["name"].tolist()
+_top3_names = ", ".join(_top3)
+month_label = f"{str(selected_month)[:4]}년 {str(selected_month)[4:6]}월"
+page_context = (
+    f"디지털 트윈 - 시간대: {selected_time_label}, "
+    f"{weekday_label}, 지표: {selected_metric}, "
+    f"기준: {month_label}, 상위 동네: {_top3_names}"
+)
+render_chat_panel(
+    current_tab="디지털 트윈",
+    selected_district=None,
+    selected_month=selected_month,
+    page_context=page_context,
+)
