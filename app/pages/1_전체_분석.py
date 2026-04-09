@@ -56,12 +56,19 @@ with h2:
 selected_month = all_months[ym_labels.index(sel_ym_label)]
 
 # ── 탭 ──
-tab_map, tab_hotplace = st.tabs(["지도", "핫플 순위"])
+tab_map, tab_hotplace = st.tabs(["지도", "넥스트 핫플"])
 
 # ═══════════════════
 # 탭 1: 동네 지도
 # ═══════════════════
 with tab_map:
+    st.markdown(
+        f'<div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">'
+        f'<span style="color:#6366F1; font-weight:700;">✦</span>'
+        f'<span style="font-size:13px; opacity:0.5;">'
+        f'118개 법정동의 지표를 한눈에</span></div>',
+        unsafe_allow_html=True,
+    )
     metric = st.selectbox("색상 기준", [
         "종합 핫플 스코어", "유동인구 (총합)", "카드매출 (총합)",
         "구매력 스코어", "방문인구 증가율",
@@ -160,6 +167,13 @@ with tab_map:
 # 탭 2: 핫플 순위
 # ═══════════════════
 with tab_hotplace:
+    st.markdown(
+        '<div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">'
+        '<span style="color:#6366F1; font-weight:700;">✦</span>'
+        '<span style="font-size:13px; opacity:0.5;">'
+        '5개 선행지표(방문인구·카페매출·유동인구·매매가·신규설치)를 종합하여 다음에 뜰 동네를 예측합니다</span></div>',
+        unsafe_allow_html=True,
+    )
     if not hp.empty:
         month_hp = hp[hp["STANDARD_YEAR_MONTH"] == selected_month].copy()
         if not month_hp.empty:

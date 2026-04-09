@@ -26,7 +26,13 @@ html, body, [data-testid="stAppViewContainer"] { font-size: 14px !important; }
 h2, h3 { font-size: 15px !important; }
 </style>""", unsafe_allow_html=True)
 st.markdown('<span style="font-size:18px; font-weight:800;">디지털 트윈</span>', unsafe_allow_html=True)
-st.caption("서울 중구 · 영등포구 · 서초구 (118개 법정동)")
+st.markdown(
+    '<div style="display:flex; align-items:center; gap:8px; margin:4px 0;">'
+    '<span style="color:#6366F1; font-weight:700;">✦</span>'
+    '<span style="font-size:13px; opacity:0.5;">'
+    '합성 시민이 움직이는 살아있는 서울 — 시간대별 인구 흐름 시뮬레이션</span></div>',
+    unsafe_allow_html=True,
+)
 
 # ── 색상 팔레트 (라이프스타일별) ──
 LIFESTYLE_COLORS = {

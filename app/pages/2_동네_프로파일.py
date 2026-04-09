@@ -96,6 +96,14 @@ try:
 except Exception:
     income_d = pd.DataFrame()
 
+st.markdown(
+    '<div style="display:flex; align-items:center; gap:8px; margin:8px 0;">'
+    '<span style="color:#6366F1; font-weight:700;">✦</span>'
+    '<span style="font-size:13px; opacity:0.5;">'
+    '소비·인구·부동산·금융 데이터를 종합한 동네 엑스레이</span></div>',
+    unsafe_allow_html=True,
+)
+
 # ═══════════════════════════════════════
 # 핫플 점수 + 추이
 # ═══════════════════════════════════════
