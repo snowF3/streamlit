@@ -29,36 +29,21 @@ from charts import (
 )
 from chat_ui import render_chat_panel
 
-# ── 페이지 정의 ──
-page_map = st.Page("pages/1_동네_지도.py", title="지도")
-page_profile = st.Page("pages/2_동네_프로파일.py", title="프로파일")
-page_hot = st.Page("pages/3_넥스트_핫플.py", title="핫플")
-page_twin = st.Page("pages/4_디지털_트윈.py", title="트윈")
-page_compare = st.Page("pages/5_동네_비교.py", title="비교")
-all_pages = [page_map, page_profile, page_hot, page_twin, page_compare]
+def _container(**kwargs):
+    try:
+        return st.container(**kwargs)
+    except TypeError:
+        return st.container()
 
-# ── 글로벌 스타일 + 헤더 ──
+# ── CSS ──
 st.markdown("""<style>
-.block-container { padding-top: 3.5rem !important; padding-bottom: 0 !important; }
+.block-container { padding-top: 1rem !important; padding-bottom: 0 !important; }
 [data-testid="stVerticalBlock"] { gap: 0.4rem !important; }
 [data-testid="stColumn"]:nth-child(2) [data-testid="stVerticalBlock"] { gap: 0.5rem !important; }
-[data-testid="stColumn"]:first-child [data-testid="stVerticalBlock"] { gap: 0 !important; }
-[data-testid="stHeader"] { background: transparent !important; pointer-events: none; }
-[data-testid="stHeader"] > * { pointer-events: auto; }
-/* 투명 버튼 */
-[data-testid="stBaseButton-tertiary"] {
-    margin: 0 !important; position: relative; z-index: 1;
-    margin-top: -36px !important; height: 36px !important;
-}
-[data-testid="stBaseButton-tertiary"] button {
-    min-height: 36px !important; height: 36px !important;
-    padding: 0 !important; opacity: 0 !important; cursor: pointer !important;
-}
-.sig-card { transition: background 0.15s; border-radius: 0 6px 6px 0; }
-.sig-card:hover { background: rgba(128,128,128,0.06) !important; }
+[data-testid="stColumn"]:first-child [data-testid="stVerticalBlock"] { gap: 0.2rem !important; }
 .signal-header {
     font-size: 12px; font-weight: 700; padding: 8px 0 6px;
-    border-bottom: 1px solid rgba(128,128,128,0.12); margin-bottom: 14px;
+    border-bottom: 1px solid rgba(128,128,128,0.12); margin-bottom: 4px;
 }
 .kw-tag {
     display: inline-block; padding: 4px 10px; border-radius: 16px;
@@ -78,25 +63,7 @@ st.markdown("""<style>
 [data-testid="stExpander"] summary { font-size: 12px !important; padding: 4px 0 !important; }
 hr { margin: 10px 0 !important; }
 [data-testid="stTab"] button { font-size: 12px !important; padding: 4px 8px !important; }
-.header-nav a { font-size: 14px !important; font-weight: 500 !important; opacity: 0.5; padding: 4px 0 !important; }
-.header-nav a:hover { opacity: 1; }
 </style>""", unsafe_allow_html=True)
-
-# ── 헤더 네비게이션 ──
-st.markdown('<div class="header-nav">', unsafe_allow_html=True)
-hcols = st.columns([1.5, 0.6, 0.8, 0.6, 0.6, 0.6, 6])
-with hcols[0]:
-    st.markdown(
-        '<span style="font-size:15px; font-weight:800;'
-        ' background:linear-gradient(135deg,#6366F1,#8B5CF6);'
-        ' -webkit-background-clip:text; -webkit-text-fill-color:transparent;">'
-        '동네 엑스레이</span>',
-        unsafe_allow_html=True,
-    )
-for i, pg in enumerate(all_pages):
-    with hcols[i + 1]:
-        st.page_link(pg, label=pg.title)
-st.markdown('</div>', unsafe_allow_html=True)
 # ── 데이터 로드 ──
 region_master = load_region_master()
 pop_agg = load_population_agg()
@@ -276,7 +243,7 @@ with col_left:
     for s in filtered:
         month_groups.setdefault(s["month_label"], []).append(s)
 
-    signal_scroll = st.container(height=380)
+    signal_scroll = _container(height=380)
     with signal_scroll:
       for month_label, month_sigs in month_groups.items():
         year = month_label[:4]
@@ -321,7 +288,7 @@ with col_left:
                 f'</div>',
                 unsafe_allow_html=True,
             )
-            if st.button("ㅤ", key=f"sig_{global_idx}", use_container_width=True, type="tertiary"):
+            if st.button("ㅤ", key=f"sig_{global_idx}", use_container_width=True, type="secondary"):
                 st.session_state.selected_signal_idx = global_idx
                 st.rerun()
 
@@ -337,7 +304,7 @@ with col_left:
     nearby_rows = pd.concat([my_row, others_rows])
     nearby = [_hp_to_signal(row) for _, row in nearby_rows.iterrows()]
     if nearby:
-        with st.container(border=True):
+        with _container(border=True):
             st.markdown(f'<div style="font-size:13px; font-weight:800; margin-bottom:4px;">{my_short} 근처 시그널</div>', unsafe_allow_html=True)
             for ni, r in enumerate(nearby):
                 rcolor = "#f04452" if r["direction"] == "up" else "#3182f6"
@@ -382,7 +349,7 @@ with col_mid:
 
     # 왜 올랐을까?
     why_title = "왜 올랐을까?" if sig["direction"] == "up" else "왜 떨어졌을까?"
-    with st.container(border=True):
+    with _container(border=True):
         st.markdown(f"**{why_title}**")
         reasons_html = "".join(
             f'<li style="font-size:13px; line-height:1.7; opacity:0.75; margin-bottom:4px;">{r}</li>'
@@ -466,7 +433,7 @@ with col_mid:
                 f'</div>',
                 unsafe_allow_html=True,
             )
-            if st.button("ㅤ", key=f"rel_{ri}", use_container_width=True, type="tertiary"):
+            if st.button("ㅤ", key=f"rel_{ri}", use_container_width=True, type="secondary"):
                 idx = signals.index(rel) if rel in signals else None
                 if idx is not None:
                     st.session_state.selected_signal_idx = idx
@@ -498,7 +465,7 @@ with col_right:
     prev_month = all_months[ym_idx + 1] if ym_idx + 1 < len(all_months) else None
     ml_str = f"{str(latest_month)[:4]}년 {int(str(latest_month)[4:6])}월" if latest_month else ""
     st.caption(f"{city} {district} · {ml_str}")
-    st.page_link("pages/2_동네_프로파일.py", label=f"프로파일 상세 보기 →", use_container_width=True)
+    st.caption("↑ 사이드바에서 '동네 프로파일'로 이동")
 
     if not latest_month:
         st.stop()
