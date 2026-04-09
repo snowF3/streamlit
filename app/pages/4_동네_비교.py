@@ -15,8 +15,13 @@ from data_loader import (
 from charts import CATEGORY_KOR
 from chat_ui import render_chat_panel
 
-st.set_page_config(page_title="동네 비교", page_icon="⚖️", layout="wide")
-st.title("⚖️ 동네 비교")
+st.markdown("""<style>
+html, body, [data-testid="stAppViewContainer"] { font-size: 14px !important; }
+[data-testid="stMetricValue"] { font-size: 20px !important; }
+[data-testid="stMetricLabel"] { font-size: 11px !important; }
+h2, h3 { font-size: 15px !important; }
+</style>""", unsafe_allow_html=True)
+st.markdown('<span style="font-size:18px; font-weight:800;">동네 비교</span>', unsafe_allow_html=True)
 
 # ── 데이터 로드 ──
 try:
