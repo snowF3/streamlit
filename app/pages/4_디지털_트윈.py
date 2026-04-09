@@ -69,7 +69,7 @@ with ctrl3:
     metric_options = ["총유동인구", "방문인구", "1인당매출", "낮밤인구비"]
     selected_metric = st.selectbox("지표 선택", metric_options)
 with ctrl4:
-    is_3d = st.toggle("3D 보기", value=True)
+    is_3d = st.checkbox("3D 보기", value=True)
 
 # ══════════════════════════════════════
 # 시간대별 데이터 필터링
