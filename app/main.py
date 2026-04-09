@@ -36,24 +36,34 @@ def _container(**kwargs):
     except TypeError:
         return st.container()
 
-# ── CSS ──
+# ── CSS (구버전 호환) ──
 st.markdown("""<style>
-/* 전체 패딩 축소 */
-.block-container { padding-top: 3.5rem !important; padding-bottom: 0 !important; }
+.block-container { padding-top: 1rem !important; padding-bottom: 0 !important; }
 [data-testid="stVerticalBlock"] { gap: 0.4rem !important; }
 [data-testid="stColumn"]:nth-child(2) [data-testid="stVerticalBlock"] { gap: 0.5rem !important; }
-/* 왼쪽 컬럼 간격 제거 */
 [data-testid="stColumn"]:first-child [data-testid="stVerticalBlock"] { gap: 0 !important; }
-/* 투명 버튼 */
-[data-testid="stBaseButton-tertiary"] {
-    margin: 0 !important; position: relative; z-index: 1;
-    margin-top: -36px !important; height: 36px !important;
+/* 사이드바 → 상단 가로 네비 */
+[data-testid="stSidebar"] {
+    top: 0 !important; height: auto !important; min-height: 0 !important;
+    position: fixed !important; left: 0 !important; right: 0 !important;
+    width: 100% !important; max-width: 100% !important;
+    z-index: 999 !important; padding: 6px 16px !important;
+    border-bottom: 1px solid rgba(128,128,128,0.1) !important;
+    border-right: none !important;
 }
-[data-testid="stBaseButton-tertiary"] button {
-    min-height: 36px !important; height: 36px !important;
-    padding: 0 !important; opacity: 0 !important; cursor: pointer !important;
+[data-testid="stSidebar"] > div { display: flex !important; flex-direction: row !important; align-items: center !important; gap: 4px !important; overflow-x: auto !important; }
+[data-testid="stSidebar"] [data-testid="stSidebarNav"] { display: flex !important; flex-direction: row !important; }
+[data-testid="stSidebar"] [data-testid="stSidebarNav"] ul { display: flex !important; flex-direction: row !important; gap: 4px !important; list-style: none !important; padding: 0 !important; margin: 0 !important; }
+[data-testid="stSidebar"] [data-testid="stSidebarNav"] li { margin: 0 !important; }
+[data-testid="stSidebar"] [data-testid="stSidebarNav"] a {
+    font-size: 13px !important; font-weight: 500 !important;
+    padding: 4px 12px !important; border-radius: 16px !important;
+    white-space: nowrap !important;
 }
-/* 시그널 카드 hover */
+[data-testid="stSidebar"] [data-testid="stSidebarNav"] a:hover { background: rgba(99,102,241,0.08) !important; }
+/* 사이드바 닫기 버튼 숨기기 */
+[data-testid="stSidebar"] button[kind="header"] { display: none !important; }
+/* 시그널 카드 */
 .sig-card { transition: background 0.15s; border-radius: 0 6px 6px 0; }
 .sig-card:hover { background: rgba(128,128,128,0.06) !important; }
 .signal-header {
@@ -72,16 +82,14 @@ st.markdown("""<style>
 .detail-title .change.up { color: #f04452; }
 .detail-title .change.down { color: #3182f6; }
 .detail-title .date { font-size: 12px; opacity: 0.4; }
-/* 오른쪽 내 동네 글씨 축소 */
 [data-testid="stColumn"]:last-child [data-testid="stMetricValue"] { font-size: 18px !important; }
 [data-testid="stColumn"]:last-child [data-testid="stMetricLabel"] { font-size: 10px !important; }
 [data-testid="stColumn"]:last-child [data-testid="stMetricDelta"] { font-size: 10px !important; }
-/* expander 컴팩트 */
 [data-testid="stExpander"] summary { font-size: 12px !important; padding: 4px 0 !important; }
-/* divider 간격 축소 */
 hr { margin: 10px 0 !important; }
-/* 탭 글씨 */
 [data-testid="stTab"] button { font-size: 12px !important; padding: 4px 8px !important; }
+/* 시그널 버튼 컴팩트 */
+.sig-btn button { padding: 2px 6px !important; min-height: 0 !important; font-size: 11px !important; }
 </style>""", unsafe_allow_html=True)
 
 # ── 데이터 로드 ──
@@ -301,18 +309,9 @@ with col_left:
             bg = "rgba(99,102,241,0.10)" if is_selected else "transparent"
             bl = "3px solid #6366F1" if is_selected else "3px solid transparent"
 
-            st.markdown(
-                f'<div class="sig-card" style="padding:6px 6px; background:{bg}; border-left:{bl};">'
-                f'  <div style="display:flex; justify-content:space-between;">'
-                f'    <span style="font-size:13px; font-weight:700;">{sig_item["name"]}</span>'
-                f'    <span style="font-size:9px; opacity:0.3;">{rank_str}</span></div>'
-                f'  <div style="font-size:11px; margin-top:1px;">'
-                f'    <span style="color:{color};">{chg_prefix}{sig_item["composite"]}점 {dir_label}</span>'
-                f'    <span style="opacity:0.35;"> · {kw}</span></div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-            if st.button("ㅤ", key=f"sig_{global_idx}", use_container_width=True, type="secondary"):
+            btn_label = f"{sig_item['name']} {chg_prefix}{sig_item['composite']}점 {dir_label}"
+            btn_type = "primary" if is_selected else "secondary"
+            if st.button(btn_label, key=f"sig_{global_idx}", use_container_width=True, type=btn_type):
                 st.session_state.selected_signal_idx = global_idx
                 st.rerun()
 
@@ -445,23 +444,16 @@ with col_mid:
             rk = rel["keywords"][0] if rel["keywords"] else ""
             rel_hp_all = hp[(hp["DISTRICT_CODE"] == rel["dc"]) & (hp["STANDARD_YEAR_MONTH"] <= rel["month"])]
             rel_curr = round(100 + rel_hp_all["hotplace_score"].sum(), 1)
+            rel_label = f"{rel['name']} {rel_curr}점 ({rp}{rel['composite']})"
             st.markdown(
-                f'<div class="sig-card" style="display:flex; justify-content:space-between; align-items:center;'
-                f'  padding:4px 0; border-bottom:1px solid rgba(128,128,128,0.06); cursor:pointer;">'
-                f'  <div style="display:flex; align-items:center; gap:5px;">'
-                f'    <span style="font-size:11px; font-weight:600;">{rel["name"]}</span>'
-                f'    <span style="font-size:11px; font-weight:700;">{rel_curr}점</span>'
-                f'    <span style="font-size:10px; color:{rc}; font-weight:600;">{rp}{rel["composite"]}점</span>'
-                f'  </div>'
-                f'  <span style="font-size:9px; opacity:0.3;">{rk}</span>'
+                f'<div style="font-size:11px; padding:3px 0; border-bottom:1px solid rgba(128,128,128,0.06);">'
+                f'  <span style="font-weight:600;">{rel["name"]}</span>'
+                f'  <span style="font-weight:700;"> {rel_curr}점</span>'
+                f'  <span style="color:{rc}; font-weight:600;"> {rp}{rel["composite"]}점</span>'
+                f'  <span style="opacity:0.3;"> · {rk}</span>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
-            if st.button("ㅤ", key=f"rel_{ri}", use_container_width=True, type="secondary"):
-                idx = signals.index(rel) if rel in signals else None
-                if idx is not None:
-                    st.session_state.selected_signal_idx = idx
-                    st.rerun()
     else:
         st.caption("같은 구의 다른 시그널이 없습니다.")
 
@@ -489,10 +481,7 @@ with col_right:
     prev_month = all_months[ym_idx + 1] if ym_idx + 1 < len(all_months) else None
     ml_str = f"{str(latest_month)[:4]}년 {int(str(latest_month)[4:6])}월" if latest_month else ""
     st.caption(f"{city} {district} · {ml_str}")
-    try:
-        st.page_link("pages/2_동네_프로파일.py", label="프로파일 상세 보기 →", use_container_width=True)
-    except Exception:
-        st.caption("사이드바에서 '동네 프로파일' 페이지로 이동하세요.")
+    st.caption("↑ 사이드바에서 '동네 프로파일'로 이동")
 
     if not latest_month:
         st.stop()
