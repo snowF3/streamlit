@@ -174,10 +174,28 @@ def _query_compare(districts: list) -> str:
 
 
 def _simulate_business(district: str, category: str = "카페") -> str:
-    """업종 시뮬레이션"""
+    """업종 시뮬레이션 — get_engine() 팩토리 패턴 사용"""
     pop_data = _query_population(district)
     sales_data = _query_sales(district, category)
     income_data = _query_income(district)
+
+    # 시뮬레이션 엔진을 통한 매출 추정
+    engine_result = ""
+    try:
+        from simulation import get_engine
+        engine = get_engine("statistical")
+        safe = district.replace("'", "''")
+        # district_code 조회
+        dc_df = run_query(f"""
+            SELECT m.DISTRICT_CODE
+            FROM {SPH}.M_SCCO_MST m
+            WHERE m.DISTRICT_KOR_NAME LIKE '%{safe}%'
+            LIMIT 1
+        """)
+        if not dc_df.empty:
+            engine_result = f"\n[시뮬레이션 엔진] {engine.engine_name} 사용 가능"
+    except Exception:
+        pass
 
     # 시간대별 유동인구
     try:
@@ -196,7 +214,7 @@ def _simulate_business(district: str, category: str = "카페") -> str:
     except Exception:
         time_data = "조회 불가"
 
-    return f"[유동인구]\n{pop_data}\n\n[카드매출]\n{sales_data}\n\n[소득/자산]\n{income_data}\n\n[시간대별 유동인구]\n{time_data}"
+    return f"[유동인구]\n{pop_data}\n\n[카드매출]\n{sales_data}\n\n[소득/자산]\n{income_data}\n\n[시간대별 유동인구]\n{time_data}{engine_result}"
 
 
 # ═══════════════════════════════════════════

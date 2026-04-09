@@ -1,5 +1,9 @@
 """
-탭 4: 디지털 트윈 — 시간대별 도시 흐름 시각화 + What-if 시뮬레이션
+탭 4: 디지털 트윈 — Phase 2 완전 구현
+- Sprint 1: 클러스터링 색상 레이어 + 유사 동네
+- Sprint 2: MiroFish Lite 페르소나 선택/행동 패턴
+- Sprint 3: 시뮬레이션 고도화 (히스토리, 비교, gauge chart)
+
 데이터 범위: 중구, 영등포구, 서초구 (118개 법정동)
 """
 import streamlit as st
@@ -14,12 +18,20 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from data_loader import (
     load_region_master, load_population_agg, load_population_time,
-    load_card_sales_agg, load_income_agg, load_district_centroids,
+    load_population_demo, load_card_sales_agg, load_income_agg,
+    load_income_detail, load_district_centroids,
     load_geojson, get_latest_year_month,
 )
 from scoring import calc_derived_metrics, normalize_series
-from simulation import StatisticalEngine, INDUSTRY_PARAMS, SimulationResult
-from charts import TIME_SLOT_KOR
+from simulation import get_engine, INDUSTRY_PARAMS, SimulationResult, TIME_WEIGHTS
+from clustering import (
+    build_feature_matrix, run_clustering, classify_district_type,
+    find_similar_districts, get_cluster_color, FEATURE_COLS,
+)
+from profile_generator import (
+    generate_persona_seeds, generate_persona_text, get_persona_summary,
+)
+from charts import TIME_SLOT_KOR, spending_radar_chart
 from chat_ui import render_chat_panel
 
 st.set_page_config(page_title="디지털 트윈", page_icon="🏙️", layout="wide")
@@ -33,12 +45,19 @@ try:
     region_master = load_region_master()
     pop_agg = load_population_agg()
     pop_time = load_population_time()
+    pop_demo = load_population_demo()
     card_agg = load_card_sales_agg()
     income_agg = load_income_agg()
     centroids = load_district_centroids()
 except Exception as e:
     st.error(f"데이터 로드 실패: {e}")
     st.stop()
+
+# income_detail은 페르소나에서만 사용 — 실패해도 계속 진행
+try:
+    income_detail = load_income_detail()
+except Exception:
+    income_detail = pd.DataFrame()
 
 # 사용 가능한 법정동
 data_districts = set(pop_agg["DISTRICT_CODE"].unique())
@@ -50,6 +69,24 @@ selected_month = all_months[0]
 
 # 파생지표 계산
 derived = calc_derived_metrics(pop_time, card_agg, pop_agg, income_agg, selected_month)
+
+# 클러스터링 (캐싱)
+@st.cache_data(ttl=3600)
+def _compute_clusters(_pop_time, _card_agg, _pop_demo, _derived, _year_month):
+    fm = build_feature_matrix(_derived, _card_agg, _pop_demo, _pop_time, _year_month)
+    labels, model, scaler = run_clustering(fm)
+    type_map = classify_district_type(fm, labels)
+    return fm, labels, type_map
+
+try:
+    feature_matrix, cluster_labels, cluster_type_map = _compute_clusters(
+        pop_time, card_agg, pop_demo, derived, selected_month
+    )
+except Exception:
+    feature_matrix, cluster_labels, cluster_type_map = pd.DataFrame(), pd.Series(dtype=int), {}
+
+# 이름 매핑 (전역)
+name_map = centroids.set_index("district_code")["name"].to_dict()
 
 # ══════════════════════════════════════
 # [A] 컨트롤 바
@@ -66,7 +103,7 @@ with ctrl2:
     weekday_label = st.radio("주중/주말", ["주중", "주말"], horizontal=True)
     weekday_code = "W" if weekday_label == "주중" else "H"
 with ctrl3:
-    metric_options = ["총유동인구", "방문인구", "1인당매출", "낮밤인구비"]
+    metric_options = ["총유동인구", "방문인구", "1인당매출", "낮밤인구비", "클러스터"]
     selected_metric = st.selectbox("지표 선택", metric_options)
 with ctrl4:
     is_3d = st.checkbox("3D 보기", value=True)
@@ -90,46 +127,68 @@ metric_col_map = {
     "방문인구": "VISITING_POPULATION",
     "1인당매출": "sales_per_capita",
     "낮밤인구비": "day_night_ratio",
+    "클러스터": "cluster",
 }
 sel_col = metric_col_map[selected_metric]
 
 # ColumnLayer용 DataFrame 구성
 column_df = centroids.copy()
 
-if sel_col in ("total_pop", "VISITING_POPULATION"):
-    # 시간대별 데이터에서 가져옴
+if sel_col == "cluster":
+    # 클러스터 레이어
+    if not cluster_labels.empty:
+        cl_df = cluster_labels.reset_index()
+        cl_df.columns = ["DISTRICT_CODE", "cluster"]
+        column_df = column_df.merge(cl_df, left_on="district_code", right_on="DISTRICT_CODE", how="left")
+        column_df.drop(columns=["DISTRICT_CODE"], errors="ignore", inplace=True)
+        column_df["cluster"] = column_df["cluster"].fillna(0).astype(int)
+        # 클러스터별 색상
+        colors = [get_cluster_color(c) + [200] for c in column_df["cluster"]]
+        column_df["fill_color"] = colors
+        column_df["elevation"] = 1500  # 균일 높이
+        column_df["metric_value"] = column_df["cluster"].map(
+            lambda c: cluster_type_map.get(c, f"유형 {c}")
+        )
+        column_df["norm"] = 0.5
+    else:
+        column_df["cluster"] = 0
+        column_df["fill_color"] = [[128, 128, 128, 160]] * len(column_df)
+        column_df["elevation"] = 1500
+        column_df["metric_value"] = "분류 불가"
+        column_df["norm"] = 0.5
+elif sel_col in ("total_pop", "VISITING_POPULATION"):
     column_df = column_df.merge(
         time_by_dc[[sel_col]].reset_index(),
         left_on="district_code", right_on="DISTRICT_CODE", how="left"
     ).drop(columns=["DISTRICT_CODE"], errors="ignore")
     column_df[sel_col] = column_df[sel_col].fillna(0)
 else:
-    # 파생지표에서 가져옴
     column_df = column_df.merge(
         derived[[sel_col]].reset_index(),
         left_on="district_code", right_on="DISTRICT_CODE", how="left"
     ).drop(columns=["DISTRICT_CODE"], errors="ignore")
     column_df[sel_col] = column_df[sel_col].fillna(0)
 
-# 정규화 — 로그 스케일로 이상치 완화
-vals = column_df[sel_col]
-log_vals = np.log1p(vals.clip(lower=0))
-min_v, max_v = log_vals.min(), log_vals.max()
-rng = max_v - min_v if max_v != min_v else 1
-norm_vals = ((log_vals - min_v) / rng).fillna(0)
+if sel_col != "cluster":
+    # 정규화 — 로그 스케일로 이상치 완화
+    vals = column_df[sel_col]
+    log_vals = np.log1p(vals.clip(lower=0))
+    min_v, max_v = log_vals.min(), log_vals.max()
+    rng = max_v - min_v if max_v != min_v else 1
+    norm_vals = ((log_vals - min_v) / rng).fillna(0)
 
-column_df["elevation"] = (norm_vals * 3000).fillna(0)
-column_df["metric_value"] = vals.round(1)
-column_df["norm"] = norm_vals
+    column_df["elevation"] = (norm_vals * 3000).fillna(0)
+    column_df["metric_value"] = vals.round(1)
+    column_df["norm"] = norm_vals
 
-# 색상 (YlOrRd)
-colors = []
-for n in norm_vals:
-    r = 255
-    g = int(255 * (1 - n * 0.8))
-    b = int(255 * (1 - n))
-    colors.append([r, g, b, int(160 + n * 60)])
-column_df["fill_color"] = colors
+    # 색상 (YlOrRd)
+    colors = []
+    for n in norm_vals:
+        r = 255
+        g = int(255 * (1 - n * 0.8))
+        b = int(255 * (1 - n))
+        colors.append([r, g, b, int(160 + n * 60)])
+    column_df["fill_color"] = colors
 
 # ══════════════════════════════════════
 # [B] 메인 시각화: 3D 맵 + 퀵 프로파일
@@ -140,7 +199,6 @@ with map_col:
     st.subheader(f"서울 법정동 — {selected_metric} ({selected_time_label}, {weekday_label})")
 
     if is_3d:
-        # ── 3D: ColumnLayer ──
         layer = pdk.Layer(
             "ColumnLayer",
             data=column_df,
@@ -165,19 +223,30 @@ with map_col:
             map_style="light",
         )
     else:
-        # ── 2D: GeoJsonLayer 코로플레스 (동 영역 전체 채색) ──
-        import json
         geojson_data = load_geojson()
-        # 각 feature에 metric 값 + 색상 주입
-        norm_map = column_df.set_index("district_code")[["norm", "metric_value"]].to_dict("index")
-        for feat in geojson_data["features"]:
-            dc = feat["properties"]["district_code"]
-            info = norm_map.get(dc, {"norm": 0, "metric_value": 0})
-            n = info["norm"]
-            feat["properties"]["metric_value"] = info["metric_value"]
-            r, g, b = 255, int(255 * (1 - n * 0.8)), int(255 * (1 - n))
-            a = int(120 + n * 100)
-            feat["properties"]["fill_color"] = [r, g, b, a]
+        if sel_col == "cluster":
+            # 클러스터별 색상으로 GeoJSON 채색
+            cl_color_map = {}
+            for _, row in column_df.iterrows():
+                cl_color_map[row["district_code"]] = {
+                    "fill_color": row["fill_color"],
+                    "metric_value": row["metric_value"],
+                }
+            for feat in geojson_data["features"]:
+                dc = feat["properties"]["district_code"]
+                info = cl_color_map.get(dc, {"fill_color": [128, 128, 128, 120], "metric_value": "미분류"})
+                feat["properties"]["fill_color"] = info["fill_color"]
+                feat["properties"]["metric_value"] = info["metric_value"]
+        else:
+            norm_map = column_df.set_index("district_code")[["norm", "metric_value"]].to_dict("index")
+            for feat in geojson_data["features"]:
+                dc = feat["properties"]["district_code"]
+                info = norm_map.get(dc, {"norm": 0, "metric_value": 0})
+                n = info["norm"]
+                feat["properties"]["metric_value"] = info["metric_value"]
+                r, g, b = 255, int(255 * (1 - n * 0.8)), int(255 * (1 - n))
+                a = int(120 + n * 100)
+                feat["properties"]["fill_color"] = [r, g, b, a]
 
         layer = pdk.Layer(
             "GeoJsonLayer",
@@ -202,10 +271,23 @@ with map_col:
         )
     st.pydeck_chart(deck)
 
+    # 클러스터 범례
+    if sel_col == "cluster" and cluster_type_map:
+        legend_cols = st.columns(min(len(cluster_type_map), 4))
+        for i, (cid, label) in enumerate(sorted(cluster_type_map.items())):
+            color = get_cluster_color(cid)
+            with legend_cols[i % len(legend_cols)]:
+                st.markdown(
+                    f'<span style="display:inline-block;width:12px;height:12px;'
+                    f'background:rgb({color[0]},{color[1]},{color[2]});'
+                    f'border-radius:2px;margin-right:4px;vertical-align:middle;"></span>'
+                    f'<span style="font-size:12px;">{label}</span>',
+                    unsafe_allow_html=True,
+                )
+
 with profile_col:
     st.subheader("📊 퀵 프로파일")
-    # 상위 1위 동네 표시
-    if not column_df.empty:
+    if not column_df.empty and sel_col != "cluster":
         top_dc = column_df.nlargest(1, sel_col).iloc[0]
         top_code = top_dc["district_code"]
         st.markdown(f"**{top_dc['name']}** (최고값)")
@@ -218,6 +300,18 @@ with profile_col:
             hhi_val = dm['consumption_hhi']
             hhi_label = "다양" if hhi_val < 0.05 else ("보통" if hhi_val < 0.15 else "편중")
             st.metric("소비집중도(HHI)", f"{hhi_val:.3f} ({hhi_label})")
+
+        # 클러스터 태그 표시
+        if top_code in cluster_labels.index:
+            cid = cluster_labels[top_code]
+            cl_label = cluster_type_map.get(cid, f"유형 {cid}")
+            cl_color = get_cluster_color(cid)
+            st.markdown(
+                f'<span style="background:rgb({cl_color[0]},{cl_color[1]},{cl_color[2]});'
+                f'color:white;padding:3px 10px;border-radius:12px;font-size:12px;">'
+                f'{cl_label}</span>',
+                unsafe_allow_html=True,
+            )
 
         # 미니 시간대별 차트
         dc_time_all = pop_time[
@@ -252,6 +346,22 @@ with profile_col:
             )
             st.plotly_chart(fig_mini, use_container_width=True)
 
+    elif sel_col == "cluster" and not column_df.empty:
+        # 클러스터 모드: 각 클러스터별 동네 수 표시
+        st.markdown("**클러스터 분포**")
+        if not cluster_labels.empty:
+            cluster_counts = cluster_labels.value_counts().sort_index()
+            for cid, cnt in cluster_counts.items():
+                label = cluster_type_map.get(cid, f"유형 {cid}")
+                color = get_cluster_color(cid)
+                st.markdown(
+                    f'<span style="display:inline-block;width:10px;height:10px;'
+                    f'background:rgb({color[0]},{color[1]},{color[2]});'
+                    f'border-radius:2px;margin-right:6px;vertical-align:middle;"></span>'
+                    f'{label}: **{cnt}개** 동네',
+                    unsafe_allow_html=True,
+                )
+
 # ══════════════════════════════════════
 # [C] 분석 패널: 히트맵 + 주중/주말 비교
 # ══════════════════════════════════════
@@ -260,7 +370,6 @@ anal_col1, anal_col2 = st.columns(2)
 
 with anal_col1:
     st.subheader("🔥 시간대별 유동인구 히트맵")
-    # 해당 월+주중/주말 전체 시간대 데이터
     pt_heatmap = pop_time[
         (pop_time["STANDARD_YEAR_MONTH"] == selected_month)
         & (pop_time["WEEKDAY_WEEKEND"] == weekday_code)
@@ -269,20 +378,14 @@ with anal_col1:
                            + pt_heatmap["WORKING_POPULATION"]
                            + pt_heatmap["VISITING_POPULATION"])
 
-    # Top 20 동네 (전체 시간대 합)
     dc_total = pt_heatmap.groupby("DISTRICT_CODE")["total"].sum().nlargest(20)
     top20_codes = dc_total.index.tolist()
-
-    # 이름 매핑
-    name_map = centroids.set_index("district_code")["name"].to_dict()
 
     pivot = pt_heatmap[pt_heatmap["DISTRICT_CODE"].isin(top20_codes)].pivot_table(
         index="DISTRICT_CODE", columns="TIME_SLOT", values="total", aggfunc="sum"
     )
-    # 시간대 순서 정렬
     ordered_slots = [s for s in time_slots if s in pivot.columns]
     pivot = pivot.reindex(columns=ordered_slots).fillna(0)
-    # Top 20 순서 유지
     pivot = pivot.reindex(top20_codes)
 
     pivot.index = [name_map.get(dc, dc) for dc in pivot.index]
@@ -298,7 +401,6 @@ with anal_col1:
 
 with anal_col2:
     st.subheader("📊 주중 vs 주말 비교 (Top 10)")
-    # 주중/주말 전체 시간대 합산
     pt_compare = pop_time[pop_time["STANDARD_YEAR_MONTH"] == selected_month].copy()
     pt_compare["total"] = (pt_compare["RESIDENTIAL_POPULATION"]
                            + pt_compare["WORKING_POPULATION"]
@@ -334,7 +436,10 @@ with anal_col2:
 # [D] 하단 탭
 # ══════════════════════════════════════
 st.divider()
-tab_insight, tab_sim, tab_ai = st.tabs(["📈 현황 인사이트", "🧪 What-if 시뮬레이션", "🤖 AI 예측 (Coming Soon)"])
+tab_insight, tab_sim, tab_persona, tab_ai = st.tabs([
+    "📈 현황 인사이트", "🧪 What-if 시뮬레이션",
+    "👤 페르소나", "🤖 AI 예측 (Coming Soon)"
+])
 
 # ── 탭1: 현황 인사이트 ──
 with tab_insight:
@@ -365,9 +470,13 @@ with tab_insight:
             top5_hhi.columns = ["소비집중도"]
             st.dataframe(top5_hhi, use_container_width=True)
 
-# ── 탭2: What-if 시뮬레이션 ──
+# ── 탭2: What-if 시뮬레이션 (Phase 2 고도화) ──
 with tab_sim:
     st.markdown("**동네에 가게를 열면?** 유동인구 · 소득 · 경쟁 데이터 기반 예상 매출을 시뮬레이션합니다.")
+
+    # 시뮬레이션 히스토리 초기화
+    if "sim_history" not in st.session_state:
+        st.session_state.sim_history = []
 
     # 동네 리스트 구성
     district_list = centroids[["district_code", "name"]].sort_values("name")
@@ -386,7 +495,7 @@ with tab_sim:
 
     if submitted:
         sim_dc = district_codes[district_labels.index(sim_district_label)]
-        engine = StatisticalEngine()
+        engine = get_engine("statistical")
         result = engine.simulate(
             district_code=sim_dc,
             industry=sim_industry,
@@ -398,18 +507,53 @@ with tab_sim:
             rent=sim_rent,
         )
 
+        # 히스토리에 저장 (최대 10개)
+        st.session_state.sim_history.append({
+            "district": sim_district_label,
+            "district_code": sim_dc,
+            "industry": sim_industry,
+            "rent": sim_rent,
+            "result": result,
+        })
+        if len(st.session_state.sim_history) > 10:
+            st.session_state.sim_history = st.session_state.sim_history[-10:]
+
+    # 최신 결과 표시
+    if st.session_state.sim_history:
+        latest = st.session_state.sim_history[-1]
+        result = latest["result"]
+
         st.markdown("---")
+        st.markdown(f"##### {latest['district']} · {latest['industry']} · 임대료 {latest['rent']:,}만원")
+
         r1, r2, r3 = st.columns(3)
 
         with r1:
             st.markdown("##### 💰 예상 월매출")
-            st.metric("중간 추정", f"{result.monthly_revenue_mid:,}만원")
+            # Gauge chart
+            fig_gauge = go.Figure(go.Indicator(
+                mode="gauge+number+delta",
+                value=result.monthly_revenue_mid,
+                number={"suffix": "만원"},
+                delta={"reference": latest["rent"], "relative": False, "valueformat": ","},
+                gauge={
+                    "axis": {"range": [0, max(result.monthly_revenue_high * 1.5, 1)]},
+                    "bar": {"color": "#6366F1"},
+                    "steps": [
+                        {"range": [0, result.monthly_revenue_low], "color": "#fef3c7"},
+                        {"range": [result.monthly_revenue_low, result.monthly_revenue_high], "color": "#d9f99d"},
+                    ],
+                    "threshold": {
+                        "line": {"color": "red", "width": 3},
+                        "thickness": 0.75,
+                        "value": latest["rent"],
+                    },
+                },
+                title={"text": "중간 추정"},
+            ))
+            fig_gauge.update_layout(height=250, margin=dict(l=20, r=20, t=40, b=10))
+            st.plotly_chart(fig_gauge, use_container_width=True)
             st.caption(f"범위: {result.monthly_revenue_low:,} ~ {result.monthly_revenue_high:,}만원")
-            if result.monthly_revenue_mid > 0:
-                profit = result.monthly_revenue_mid - sim_rent
-                delta_color = "normal" if profit > 0 else "inverse"
-                st.metric("임대료 차감 후", f"{profit:,}만원",
-                          delta=f"임대료 {sim_rent:,}만원", delta_color=delta_color)
 
         with r2:
             st.markdown("##### ⏰ 피크 시간대 & 고객층")
@@ -417,6 +561,26 @@ with tab_sim:
                 for i, ph in enumerate(result.peak_hours, 1):
                     st.markdown(f"{i}. {ph}")
             st.markdown(f"**주 고객층:** {result.main_customer}")
+            if result.competition_index > 0:
+                ci = result.competition_index
+                ci_label = "낮음" if ci < 0.3 else ("보통" if ci < 0.6 else "높음")
+                st.metric("경쟁 강도", f"{ci:.2f} ({ci_label})")
+
+            # 시간대별 매출 비중 미니 차트
+            if result.time_revenue_dist:
+                td = result.time_revenue_dist
+                slots_sorted = sorted(td.keys())
+                fig_td = go.Figure(go.Bar(
+                    x=[TIME_SLOT_KOR.get(s, s) for s in slots_sorted],
+                    y=[td[s] for s in slots_sorted],
+                    marker_color="#6366F1",
+                ))
+                fig_td.update_layout(
+                    height=150, margin=dict(l=0, r=0, t=10, b=0),
+                    xaxis=dict(tickfont=dict(size=8)),
+                    yaxis=dict(title="만원", tickfont=dict(size=8)),
+                )
+                st.plotly_chart(fig_td, use_container_width=True)
 
         with r3:
             st.markdown("##### ⚠️ 리스크 요인")
@@ -425,21 +589,157 @@ with tab_sim:
 
         st.caption("⚠️ 통계 기반 추정치이며, 실제 매출과 차이가 있을 수 있습니다.")
 
-# ── 탭3: AI 예측 (Coming Soon) ──
+        # ── 시뮬레이션 히스토리 비교 ──
+        if len(st.session_state.sim_history) >= 2:
+            st.markdown("---")
+            st.markdown("##### 📊 시뮬레이션 비교")
+
+            # 최근 2개 비교
+            hist = st.session_state.sim_history
+            compare_options = [f"{h['district']} · {h['industry']}" for h in hist]
+
+            cmp_col1, cmp_col2 = st.columns(2)
+            with cmp_col1:
+                cmp_idx1 = st.selectbox("비교 A", range(len(hist)),
+                                        format_func=lambda i: compare_options[i],
+                                        index=len(hist) - 2, key="cmp_a")
+            with cmp_col2:
+                cmp_idx2 = st.selectbox("비교 B", range(len(hist)),
+                                        format_func=lambda i: compare_options[i],
+                                        index=len(hist) - 1, key="cmp_b")
+
+            h1, h2 = hist[cmp_idx1], hist[cmp_idx2]
+            r1, r2 = h1["result"], h2["result"]
+
+            compare_data = pd.DataFrame({
+                "지표": ["예상 월매출(만원)", "임대료(만원)", "수익(만원)", "경쟁 강도"],
+                h1["district"] + " " + h1["industry"]: [
+                    r1.monthly_revenue_mid, h1["rent"],
+                    r1.monthly_revenue_mid - h1["rent"], r1.competition_index,
+                ],
+                h2["district"] + " " + h2["industry"]: [
+                    r2.monthly_revenue_mid, h2["rent"],
+                    r2.monthly_revenue_mid - h2["rent"], r2.competition_index,
+                ],
+            })
+            st.dataframe(compare_data.set_index("지표"), use_container_width=True)
+
+# ── 탭3: 페르소나 (Phase 2 Sprint 2) ──
+with tab_persona:
+    st.markdown("**법정동 대표 페르소나** — 성별×연령대×직업군 교차 분석으로 생성된 가상 거주자 프로파일")
+
+    # 동네 선택
+    persona_district_label = st.selectbox(
+        "동네 선택", district_labels, key="persona_district"
+    )
+    persona_dc = district_codes[district_labels.index(persona_district_label)]
+
+    if not income_detail.empty:
+        personas = generate_persona_seeds(
+            income_detail, income_agg, persona_dc, selected_month
+        )
+    else:
+        personas = []
+
+    if personas:
+        # 페르소나 요약 테이블
+        summary = get_persona_summary(personas)
+        p_col1, p_col2 = st.columns([1, 1])
+
+        with p_col1:
+            st.markdown(f"**{persona_district_label}** — 총 {len(personas)}개 페르소나 유형")
+            if not summary.empty:
+                st.dataframe(summary, use_container_width=True)
+
+        with p_col2:
+            # 직업군별 분포 파이차트
+            df_p = pd.DataFrame(personas)
+            job_dist = df_p.groupby("job_type")["weight"].sum().sort_values(ascending=False)
+            fig_job = go.Figure(go.Pie(
+                labels=job_dist.index.tolist(),
+                values=job_dist.values.tolist(),
+                hole=0.4,
+                textinfo="label+percent",
+                textposition="outside",
+            ))
+            fig_job.update_layout(
+                title="직업군 분포", height=300,
+                margin=dict(l=20, r=20, t=40, b=10),
+                showlegend=False,
+            )
+            st.plotly_chart(fig_job, use_container_width=True)
+
+        # 시간대별 페르소나 행동 패턴 (직업군별 시간대 활동 추정)
+        st.markdown("---")
+        st.markdown("##### 시간대별 행동 패턴 (추정)")
+
+        # 직업군별 시간대 가중치 (근사 모델)
+        JOB_TIME_PATTERN = {
+            "대기업":     {"T06": 0.3, "T09": 1.0, "T12": 0.9, "T15": 1.0, "T18": 0.6, "T21": 0.2, "T24": 0.05},
+            "일반직장":   {"T06": 0.3, "T09": 1.0, "T12": 0.9, "T15": 1.0, "T18": 0.5, "T21": 0.2, "T24": 0.05},
+            "전문직":     {"T06": 0.2, "T09": 0.8, "T12": 0.9, "T15": 1.0, "T18": 0.7, "T21": 0.3, "T24": 0.1},
+            "임원":       {"T06": 0.2, "T09": 0.9, "T12": 1.0, "T15": 0.9, "T18": 0.8, "T21": 0.4, "T24": 0.1},
+            "자영업":     {"T06": 0.2, "T09": 0.7, "T12": 1.0, "T15": 1.0, "T18": 1.0, "T21": 0.6, "T24": 0.2},
+            "전문자영":   {"T06": 0.2, "T09": 0.8, "T12": 0.9, "T15": 1.0, "T18": 0.8, "T21": 0.4, "T24": 0.1},
+            "기타":       {"T06": 0.3, "T09": 0.5, "T12": 0.7, "T15": 0.6, "T18": 0.5, "T21": 0.3, "T24": 0.1},
+        }
+
+        pattern_data = {}
+        for job, pattern in JOB_TIME_PATTERN.items():
+            job_weight = job_dist.get(job, 0)
+            if job_weight > 0:
+                for slot, activity in pattern.items():
+                    if slot not in pattern_data:
+                        pattern_data[slot] = {}
+                    pattern_data[slot][job] = activity * job_weight
+
+        if pattern_data:
+            fig_pattern = go.Figure()
+            for job in JOB_TIME_PATTERN:
+                if job in job_dist.index:
+                    y_vals = [pattern_data.get(s, {}).get(job, 0) for s in time_slots]
+                    fig_pattern.add_trace(go.Scatter(
+                        x=[TIME_SLOT_KOR.get(s, s) for s in time_slots],
+                        y=y_vals,
+                        mode="lines+markers",
+                        name=job,
+                        stackgroup="one",
+                    ))
+            fig_pattern.update_layout(
+                height=350,
+                margin=dict(l=0, r=0, t=10, b=0),
+                xaxis_title="시간대",
+                yaxis_title="활동 지수 (가중)",
+                legend=dict(orientation="h", y=-0.2),
+            )
+            st.plotly_chart(fig_pattern, use_container_width=True)
+
+        # 개별 페르소나 샘플
+        st.markdown("---")
+        st.markdown("##### 대표 페르소나 샘플")
+        top_personas = sorted(personas, key=lambda p: p["weight"], reverse=True)[:5]
+        for p in top_personas:
+            text = generate_persona_text(p, persona_district_label)
+            st.markdown(f"- {text}")
+    else:
+        st.info("이 동네의 소득/직업 상세 데이터가 없어 페르소나를 생성할 수 없습니다.")
+
+# ── 탭4: AI 예측 (Coming Soon) ──
 with tab_ai:
     st.info(
-        "🤖 **AI 에이전트 기반 예측 (Phase 2 예정)**\n\n"
+        "🤖 **AI 에이전트 기반 예측 (Phase 3 예정)**\n\n"
         "MiroFish AI 에이전트가 수천 개의 가상 페르소나를 시뮬레이션하여 "
         "미래 상권 변화를 예측합니다.\n\n"
-        "- 법정동별 AI 페르소나 생성\n"
-        "- 에이전트 간 상호작용 시뮬레이션\n"
-        "- 상권 변화 예측 보고서 자동 생성"
+        "- 법정동별 AI 페르소나 생성 ✅ (Phase 2 완료)\n"
+        "- 클러스터 기반 유사 동네 매칭 ✅ (Phase 2 완료)\n"
+        "- 에이전트 간 상호작용 시뮬레이션 (Phase 3)\n"
+        "- 상권 변화 예측 보고서 자동 생성 (Phase 3)"
     )
 
 # ══════════════════════════════════════
 # [E] AI 채팅
 # ══════════════════════════════════════
-_top3 = column_df.nlargest(3, sel_col)["name"].tolist()
+_top3 = column_df.nlargest(3, sel_col if sel_col != "cluster" else "district_code")["name"].tolist()
 _top3_names = ", ".join(_top3)
 month_label = f"{str(selected_month)[:4]}년 {str(selected_month)[4:6]}월"
 page_context = (

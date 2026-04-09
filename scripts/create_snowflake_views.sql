@@ -148,3 +148,21 @@ SELECT
 FROM CARD_SALES_INFO
 WHERE CARD_TYPE = '1'
 GROUP BY 1, 2;
+
+
+-- ────────────────────────────────────────
+-- 4. PERSONA_SEED (Phase 2 Sprint 2: 페르소나 시드)
+-- ────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS PERSONA_SEED (
+    PERSONA_ID      VARCHAR(100) PRIMARY KEY,
+    DISTRICT_CODE   VARCHAR(10) NOT NULL,
+    GENDER          VARCHAR(1),
+    AGE_GROUP       VARCHAR(20),
+    JOB_TYPE        VARCHAR(30),
+    INCOME_BRACKET  VARCHAR(20),
+    WEIGHT          NUMBER(10, 0),
+    AVG_INCOME      NUMBER(12, 0),
+    CREATED_AT      TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
+);
+
+COMMENT ON TABLE PERSONA_SEED IS '법정동별 대표 페르소나 시드 (성별×연령대×직업군)';

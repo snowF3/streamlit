@@ -6,3 +6,4 @@ dependencies:
   - pandas
   - numpy
   - pydeck
+  - scikit-learn

@@ -354,3 +354,193 @@ def generate_all_profiles(
         )
         profiles.append(profile)
     return profiles
+
+
+# ═══════════════════════════════════════════
+# Phase 2 Sprint 2: 페르소나 시드 생성
+# ═══════════════════════════════════════════
+
+# 성별×연령대×직업군 교차 조합 → 페르소나 코드
+AGE_GROUP_LABELS = {
+    10: "10대", 15: "10대", 20: "20대", 25: "20대",
+    30: "30대", 35: "30대", 40: "40대", 45: "40대",
+    50: "50대", 55: "50대", 60: "60대", 65: "60대이상",
+    70: "70대이상",
+}
+
+JOB_TYPE_LABELS = {
+    "RATE_MODEL_GROUP_LARGE_COMPANY_EMPLOYEE": "대기업",
+    "RATE_MODEL_GROUP_GENERAL_EMPLOYEE": "일반직장",
+    "RATE_MODEL_GROUP_PROFESSIONAL_EMPLOYEE": "전문직",
+    "RATE_MODEL_GROUP_EXECUTIVES": "임원",
+    "RATE_MODEL_GROUP_GENERAL_SELF_EMPLOYED": "자영업",
+    "RATE_MODEL_GROUP_PROFESSIONAL_SELF_EMPLOYED": "전문자영",
+    "RATE_MODEL_GROUP_OTHERS": "기타",
+}
+
+INCOME_BRACKETS = {
+    "RATE_INCOME_UNDER_20M": "~2천만",
+    "RATE_INCOME_20M_TO_30M": "2~3천만",
+    "RATE_INCOME_30M_TO_40M": "3~4천만",
+    "RATE_INCOME_40M_TO_50M": "4~5천만",
+    "RATE_INCOME_50M_TO_60M": "5~6천만",
+    "RATE_INCOME_60M_TO_70M": "6~7천만",
+    "RATE_INCOME_OVER_70M": "7천만~",
+}
+
+
+def generate_persona_seeds(
+    income_detail_df: pd.DataFrame,
+    income_agg_df: pd.DataFrame,
+    district_code: str,
+    year_month: int,
+) -> list[dict]:
+    """
+    성별×연령대×직업군 교차 비율에서 페르소나 시드 생성
+
+    Parameters
+    ----------
+    income_detail_df : DataFrame  load_income_detail() (성별, 연령대별 소득)
+    income_agg_df : DataFrame  load_income_agg() (직업군 비율 포함)
+    district_code : str
+    year_month : int
+
+    Returns
+    -------
+    list[dict]  각 페르소나 시드 정보
+    """
+    # 해당 동/년월 필터
+    detail = income_detail_df[
+        (income_detail_df["DISTRICT_CODE"] == district_code)
+        & (income_detail_df["STANDARD_YEAR_MONTH"] == year_month)
+    ]
+    agg = income_agg_df[
+        (income_agg_df["DISTRICT_CODE"] == district_code)
+        & (income_agg_df["STANDARD_YEAR_MONTH"] == year_month)
+    ]
+
+    if detail.empty or agg.empty:
+        return []
+
+    agg_row = agg.iloc[0]
+    total_customers = agg_row.get("total_customers", 0)
+    if total_customers == 0:
+        return []
+
+    # 직업군 비율
+    job_rates = {}
+    for col, label in JOB_TYPE_LABELS.items():
+        rate = agg_row.get(col, 0)
+        if pd.notna(rate) and rate > 0:
+            job_rates[label] = float(rate)
+
+    # 소득 구간 분포 → 가장 높은 구간 결정
+    income_bracket_rates = {}
+    for col, label in INCOME_BRACKETS.items():
+        rate = agg_row.get(col, 0)
+        if pd.notna(rate) and rate > 0:
+            income_bracket_rates[label] = float(rate)
+
+    personas = []
+    for _, row in detail.iterrows():
+        gender = row.get("GENDER", "M")
+        age_group = row.get("AGE_GROUP", 30)
+        customer_count = row.get("CUSTOMER_COUNT", 0)
+        avg_income = row.get("AVERAGE_INCOME", 0)
+
+        if customer_count <= 0:
+            continue
+
+        age_label = AGE_GROUP_LABELS.get(int(age_group), f"{age_group}대") if pd.notna(age_group) else "미상"
+
+        # 각 직업군에 대해 가중 페르소나 생성
+        for job_label, job_rate in job_rates.items():
+            weight = round(customer_count * job_rate)
+            if weight <= 0:
+                continue
+
+            # 소득 구간 결정 (해당 성별/연령 평균소득 기준)
+            if pd.notna(avg_income) and avg_income > 0:
+                if avg_income < 20_000_000:
+                    bracket = "~2천만"
+                elif avg_income < 30_000_000:
+                    bracket = "2~3천만"
+                elif avg_income < 40_000_000:
+                    bracket = "3~4천만"
+                elif avg_income < 50_000_000:
+                    bracket = "4~5천만"
+                elif avg_income < 60_000_000:
+                    bracket = "5~6천만"
+                elif avg_income < 70_000_000:
+                    bracket = "6~7천만"
+                else:
+                    bracket = "7천만~"
+            else:
+                bracket = "미상"
+
+            # 구 약칭 (district_code 앞 5자리)
+            district_short = district_code[:5]
+            gender_code = "M" if gender == "M" else "F"
+            persona_id = f"{district_short}_{gender_code}{age_label}_{job_label}"
+
+            personas.append({
+                "persona_id": persona_id,
+                "district_code": district_code,
+                "gender": gender,
+                "age_group": age_label,
+                "job_type": job_label,
+                "income_bracket": bracket,
+                "weight": weight,
+                "avg_income": int(avg_income) if pd.notna(avg_income) else 0,
+            })
+
+    return personas
+
+
+def generate_persona_text(persona: dict, district_name: str = "") -> str:
+    """페르소나 시드 → 자연어 설명 텍스트"""
+    gender_kor = "남성" if persona["gender"] == "M" else "여성"
+    loc = f"{district_name} 거주 " if district_name else ""
+
+    lines = [
+        f"{loc}{persona['age_group']} {gender_kor}, 직업: {persona['job_type']}.",
+        f"소득 구간: {persona['income_bracket']}, 평균 소득 약 {persona['avg_income']:,}원.",
+        f"이 유형은 약 {persona['weight']:,}명을 대표한다.",
+    ]
+    return " ".join(lines)
+
+
+def get_persona_summary(personas: list[dict]) -> pd.DataFrame:
+    """페르소나 리스트 → 요약 DataFrame (성별×연령대 피벗)"""
+    if not personas:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(personas)
+    pivot = df.pivot_table(
+        index="age_group", columns="gender",
+        values="weight", aggfunc="sum", fill_value=0
+    )
+    pivot.columns = [("남성" if c == "M" else "여성") for c in pivot.columns]
+    return pivot
+
+
+# ═══════════════════════════════════════════
+# PERSONA_SEED 테이블 생성 SQL
+# ═══════════════════════════════════════════
+
+PERSONA_SEED_DDL = """
+-- Phase 2 Sprint 2: PERSONA_SEED Snowflake 테이블
+CREATE TABLE IF NOT EXISTS PERSONA_SEED (
+    PERSONA_ID      VARCHAR(100) PRIMARY KEY,
+    DISTRICT_CODE   VARCHAR(10) NOT NULL,
+    GENDER          VARCHAR(1),
+    AGE_GROUP       VARCHAR(20),
+    JOB_TYPE        VARCHAR(30),
+    INCOME_BRACKET  VARCHAR(20),
+    WEIGHT          NUMBER(10, 0),
+    AVG_INCOME      NUMBER(12, 0),
+    CREATED_AT      TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
+);
+
+COMMENT ON TABLE PERSONA_SEED IS '법정동별 대표 페르소나 시드 (성별×연령대×직업군)';
+"""

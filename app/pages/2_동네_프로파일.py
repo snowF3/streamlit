@@ -4,6 +4,8 @@
 """
 import streamlit as st
 import pandas as pd
+import plotly.graph_objects as go
+import numpy as np
 import sys
 from pathlib import Path
 
@@ -11,11 +13,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from data_loader import (
     load_region_master, load_card_sales_agg, load_card_sales_time,
     load_population_agg, load_population_time, load_population_demo,
-    load_income_agg, load_realestate, load_richgo_population
+    load_income_agg, load_district_centroids, load_realestate, load_richgo_population
 )
+from scoring import calc_derived_metrics
 from charts import (
     spending_radar_chart, population_flow_chart, population_pyramid,
     realestate_trend_chart, income_distribution_chart, job_donut_chart
+)
+from clustering import (
+    build_feature_matrix, run_clustering, classify_district_type,
+    find_similar_districts, get_cluster_color, FEATURE_COLS,
 )
 from chat_ui import render_chat_panel
 
@@ -130,6 +137,89 @@ with col4:
         st.metric("고객 수", f"{customers:,.0f}명")
     else:
         st.metric("고객 수", "N/A")
+
+# ── 클러스터 태그 + 유사 동네 ──
+try:
+    centroids = load_district_centroids()
+    derived = calc_derived_metrics(pop_time, card_agg, pop_agg, income_agg, selected_month)
+    fm = build_feature_matrix(derived, card_agg, pop_demo, pop_time, selected_month)
+    cl_labels, _, _ = run_clustering(fm)
+    cl_type_map = classify_district_type(fm, cl_labels)
+
+    if dc in cl_labels.index:
+        cid = cl_labels[dc]
+        cl_label = cl_type_map.get(cid, f"유형 {cid}")
+        cl_color = get_cluster_color(cid)
+        st.markdown(
+            f'<span style="background:rgb({cl_color[0]},{cl_color[1]},{cl_color[2]});'
+            f'color:white;padding:4px 14px;border-radius:14px;font-size:13px;font-weight:600;">'
+            f'{cl_label}</span>',
+            unsafe_allow_html=True,
+        )
+
+        # 유사 동네 Top 5
+        similar = find_similar_districts(fm, dc, top_n=5)
+        if not similar.empty:
+            st.markdown("##### 🔗 유사 동네 Top 5")
+            name_map = centroids.set_index("district_code")["name"].to_dict()
+
+            sim_cols = st.columns(min(5, len(similar)))
+            for i, (_, sim_row) in enumerate(similar.iterrows()):
+                sim_dc = sim_row["district_code"]
+                sim_name = name_map.get(sim_dc, sim_dc)
+                sim_score = sim_row["similarity"]
+                sim_cid = cl_labels.get(sim_dc, 0)
+                sim_cl_label = cl_type_map.get(sim_cid, "")
+                sim_color = get_cluster_color(sim_cid)
+
+                with sim_cols[i]:
+                    st.markdown(f"**{sim_name}**")
+                    st.caption(f"유사도: {sim_score:.2f}")
+                    st.markdown(
+                        f'<span style="background:rgb({sim_color[0]},{sim_color[1]},{sim_color[2]});'
+                        f'color:white;padding:2px 8px;border-radius:10px;font-size:10px;">'
+                        f'{sim_cl_label}</span>',
+                        unsafe_allow_html=True,
+                    )
+
+                    # 미니 레이더 차트
+                    if sim_dc in fm.index and dc in fm.index:
+                        target_vals = fm.loc[dc].values.tolist()
+                        sim_vals = fm.loc[sim_dc].values.tolist()
+
+                        # 정규화 (0~1)
+                        fm_min = fm.min()
+                        fm_max = fm.max()
+                        fm_range = (fm_max - fm_min).replace(0, 1)
+                        t_norm = ((fm.loc[dc] - fm_min) / fm_range).values.tolist()
+                        s_norm = ((fm.loc[sim_dc] - fm_min) / fm_range).values.tolist()
+
+                        short_labels = ["낮밤비", "방문", "HHI", "매출", "소득", "1위업종", "청년", "주말"]
+                        fig_radar = go.Figure()
+                        fig_radar.add_trace(go.Scatterpolar(
+                            r=t_norm + [t_norm[0]],
+                            theta=short_labels + [short_labels[0]],
+                            fill="toself", name=f"{city} {district}",
+                            line=dict(color="#6366F1", width=1),
+                            fillcolor="rgba(99,102,241,0.15)",
+                        ))
+                        fig_radar.add_trace(go.Scatterpolar(
+                            r=s_norm + [s_norm[0]],
+                            theta=short_labels + [short_labels[0]],
+                            fill="toself", name=sim_name,
+                            line=dict(color="#EF553B", width=1),
+                            fillcolor="rgba(239,85,59,0.15)",
+                        ))
+                        fig_radar.update_layout(
+                            height=180,
+                            margin=dict(l=20, r=20, t=10, b=10),
+                            polar=dict(radialaxis=dict(visible=False, range=[0, 1])),
+                            showlegend=False,
+                        )
+                        st.plotly_chart(fig_radar, use_container_width=True,
+                                        key=f"sim_radar_{i}")
+except Exception:
+    pass  # 클러스터링 실패 시 기존 페이지 그대로 표시
 
 st.divider()
 
