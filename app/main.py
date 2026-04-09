@@ -174,45 +174,25 @@ if "selected_signal_idx" not in st.session_state:
 if "my_neighborhood" not in st.session_state:
     st.session_state.my_neighborhood = district_options[0]
 
-# ── 년월 선택 (좌우 화살표) ──
+# ── 헤더 ──
 all_ym = sorted(hp["STANDARD_YEAR_MONTH"].unique(), reverse=True)
-
-if "ym_idx" not in st.session_state:
-    st.session_state.ym_idx = 0
-
+ym_labels = [f"{str(m)[:4]}년 {int(str(m)[4:6])}월" for m in all_ym]
 total_records = len(hp)
-h1, h2, h3, h4, h5 = st.columns([4, 0.5, 2, 0.5, 4])
+
+h1, h2 = st.columns([5, 2])
 with h1:
     st.markdown(
-        f'<div style="display:flex; align-items:center; gap:8px;">'
+        f'<div style="display:flex; align-items:center; gap:8px; padding:4px 0;">'
         f'<span style="color:#6366F1; font-weight:700; font-size:16px;">✦</span>'
         f'<span style="font-size:13px; font-weight:600; opacity:0.5;">'
         f'데이터 {total_records:,}건을 분석한 시그널</span></div>',
         unsafe_allow_html=True,
     )
-ym_labels = [f"{str(m)[:4]}년 {int(str(m)[4:6])}월" for m in all_ym]
+with h2:
 
 # 드롭다운 키 초기화
-if "ym_sel" not in st.session_state:
-    st.session_state.ym_sel = ym_labels[0]
-
-with h2:
-    if st.button("◀", key="ym_prev", use_container_width=True, disabled=st.session_state.ym_idx >= len(all_ym) - 1):
-        st.session_state.ym_idx = min(st.session_state.ym_idx + 1, len(all_ym) - 1)
-        st.session_state.ym_sel = ym_labels[st.session_state.ym_idx]
-        st.rerun()
-with h3:
-    def _on_ym_change():
-        st.session_state.ym_idx = ym_labels.index(st.session_state.ym_sel)
-    st.selectbox("년월", ym_labels, key="ym_sel", label_visibility="collapsed", on_change=_on_ym_change)
-    st.session_state.ym_idx = ym_labels.index(st.session_state.ym_sel)
-with h4:
-    if st.button("▶", key="ym_next", use_container_width=True, disabled=st.session_state.ym_idx <= 0):
-        st.session_state.ym_idx = max(st.session_state.ym_idx - 1, 0)
-        st.session_state.ym_sel = ym_labels[st.session_state.ym_idx]
-        st.rerun()
-
-selected_ym = all_ym[st.session_state.ym_idx]
+selected_ym_label = st.selectbox("기준 년월", ym_labels, index=0)
+selected_ym = all_ym[ym_labels.index(selected_ym_label)]
 
 # 선택된 월 + 이전 3개월 시그널
 selected_months = [m for m in all_ym if m <= selected_ym][:4]
@@ -239,47 +219,67 @@ with col_left:
     else:
         filtered = list(signals)
 
+    # 순위 계산
+    for s in filtered:
+        m_all = hp[hp["STANDARD_YEAR_MONTH"] == s["month"]].sort_values("hotplace_score", ascending=False)
+        rank_list = list(m_all["DISTRICT_CODE"])
+        total_d = len(rank_list)
+        rank = rank_list.index(s["dc"]) + 1 if s["dc"] in rank_list else 0
+        if rank <= 3:
+            s["_rank"] = f"상위{rank}"
+        elif rank > total_d - 3:
+            s["_rank"] = f"하위{total_d - rank + 1}"
+        else:
+            s["_rank"] = f"{rank}/{total_d}"
+
+    # selectbox 시그널 선택
+    def _sig_label(s):
+        cp = "+" if s["direction"] == "up" else ""
+        dl = "▲" if s["direction"] == "up" else "▼"
+        m = s["month_label"]
+        return f"[{m[:4]}.{m[5:]}] {s['name']} {cp}{s['composite']}점{dl} {s['_rank']}"
+
+    sig_options = [_sig_label(s) for s in filtered]
+    sel_idx = min(st.session_state.selected_signal_idx, len(filtered) - 1)
+
+    if "sig_sel" not in st.session_state:
+        st.session_state.sig_sel = sig_options[sel_idx] if sig_options else ""
+
+    def _on_sig_change():
+        idx = sig_options.index(st.session_state.sig_sel) if st.session_state.sig_sel in sig_options else 0
+        st.session_state.selected_signal_idx = idx
+
+    st.selectbox("시그널", sig_options, key="sig_sel", label_visibility="collapsed", on_change=_on_sig_change)
+    st.session_state.selected_signal_idx = sig_options.index(st.session_state.sig_sel) if st.session_state.sig_sel in sig_options else 0
+
+    # HTML 카드 리스트
     month_groups: dict[str, list] = {}
     for s in filtered:
         month_groups.setdefault(s["month_label"], []).append(s)
 
-    signal_scroll = _container(height=380)
-    with signal_scroll:
-      for month_label, month_sigs in month_groups.items():
-        year = month_label[:4]
-        mon = month_label[5:]
+    for ml, sigs_m in month_groups.items():
+        year, mon = ml[:4], ml[5:]
         st.markdown(f'<div class="signal-header">{year}년 {int(mon)}월</div>', unsafe_allow_html=True)
-
-        # 해당 월 전체 순위 계산
-        m_ym = month_sigs[0]["month"] if month_sigs else None
-        m_all = hp[hp["STANDARD_YEAR_MONTH"] == m_ym].sort_values("hotplace_score", ascending=False) if m_ym else pd.DataFrame()
-        rank_map = {row["DISTRICT_CODE"]: i + 1 for i, (_, row) in enumerate(m_all.iterrows())} if not m_all.empty else {}
-        total_d = len(m_all)
-
-        for sig_item in month_sigs:
-            global_idx = signals.index(sig_item) if sig_item in signals else 0
-            is_selected = global_idx == st.session_state.selected_signal_idx
-            chg_prefix = "+" if sig_item["direction"] == "up" else ""
-            color = "#f04452" if sig_item["direction"] == "up" else "#3182f6"
-            dir_label = "상승" if sig_item["direction"] == "up" else "하락"
-            kw = sig_item["keywords"][0] if sig_item["keywords"] else ""
-            rank = rank_map.get(sig_item["dc"], 0)
-            if rank and total_d:
-                if rank <= 3:
-                    rank_str = f"상위 {rank}"
-                elif rank > total_d - 3:
-                    rank_str = f"하위 {total_d - rank + 1}"
-                else:
-                    rank_str = f"{rank}/{total_d}"
-            else:
-                rank_str = ""
-
-            sel_mark = "● " if is_selected else ""
-            btn_label = f"{sel_mark}{sig_item['name']} {chg_prefix}{sig_item['composite']}점 {dir_label} · {rank_str}"
-            btn_type = "primary" if is_selected else "secondary"
-            if st.button(btn_label, key=f"sig_{global_idx}", use_container_width=True, type=btn_type):
-                st.session_state.selected_signal_idx = global_idx
-                st.rerun()
+        for s in sigs_m:
+            is_sel = (filtered.index(s) == st.session_state.selected_signal_idx)
+            cp = "+" if s["direction"] == "up" else ""
+            color = "#f04452" if s["direction"] == "up" else "#3182f6"
+            dl = "상승" if s["direction"] == "up" else "하락"
+            kw = s["keywords"][0] if s["keywords"] else ""
+            bg = "rgba(99,102,241,0.12)" if is_sel else "transparent"
+            bl = "3px solid #6366F1" if is_sel else "3px solid transparent"
+            mark = "● " if is_sel else ""
+            st.markdown(
+                f'<div style="padding:6px 8px; background:{bg}; border-left:{bl}; border-radius:0 4px 4px 0; margin-bottom:3px;">'
+                f'  <div style="display:flex; justify-content:space-between;">'
+                f'    <span style="font-size:12px; font-weight:700;">{mark}{s["name"]}</span>'
+                f'    <span style="font-size:9px; opacity:0.3;">{s["_rank"]}</span></div>'
+                f'  <div style="font-size:11px; margin-top:2px;">'
+                f'    <span style="color:{color};">{cp}{s["composite"]}점 {dl}</span>'
+                f'    <span style="opacity:0.3;"> · {kw}</span></div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
 
     # ── 근처 시그널 (parquet에서 직접 조회) ──
     # ── 근처 시그널 (별도 컨테이너) ──
@@ -313,6 +313,7 @@ with col_left:
 # MIDDLE: 상세 패널
 # ─────────────────────────────────────
 with col_mid:
+    st.markdown("")  # 상단 여백
     sel_idx = min(st.session_state.selected_signal_idx, len(signals) - 1)
     sig = signals[sel_idx]
     chg_prefix = "+" if sig["direction"] == "up" else ""
@@ -429,10 +430,10 @@ with col_right:
     st.markdown("")
     st.markdown('<div style="font-size:14px; font-weight:700; margin-bottom:8px;">내 동네</div>', unsafe_allow_html=True)
     current_idx = district_options.index(st.session_state.my_neighborhood) if st.session_state.my_neighborhood in district_options else 0
-    new_nb = st.selectbox("동네 변경", district_options, index=current_idx, label_visibility="collapsed", key="my_nb_select")
-    if new_nb != st.session_state.my_neighborhood:
-        st.session_state.my_neighborhood = new_nb
-        st.rerun()
+    def _on_nb_change():
+        st.session_state.my_neighborhood = st.session_state.my_nb_select
+    st.selectbox("동네 변경", district_options, index=current_idx, label_visibility="collapsed", key="my_nb_select", on_change=_on_nb_change)
+    new_nb = st.session_state.my_nb_select if "my_nb_select" in st.session_state else st.session_state.my_neighborhood
 
     sel_row = rm[rm["label"] == new_nb].iloc[0]
     dc = sel_row["district_code"]
