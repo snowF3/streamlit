@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from data_loader import (
     load_region_master, load_population_agg, load_population_time,
     load_card_sales_agg, load_income_agg, load_district_centroids,
-    get_latest_year_month,
+    load_geojson, get_latest_year_month,
 )
 from scoring import calc_derived_metrics, normalize_series
 from simulation import StatisticalEngine, INDUSTRY_PARAMS, SimulationResult
@@ -111,21 +111,24 @@ else:
     ).drop(columns=["DISTRICT_CODE"], errors="ignore")
     column_df[sel_col] = column_df[sel_col].fillna(0)
 
-# elevation 정규화 (0 ~ 5000)
+# 정규화 — 로그 스케일로 이상치 완화
 vals = column_df[sel_col]
-min_v, max_v = vals.min(), vals.max()
+log_vals = np.log1p(vals.clip(lower=0))
+min_v, max_v = log_vals.min(), log_vals.max()
 rng = max_v - min_v if max_v != min_v else 1
-column_df["elevation"] = ((vals - min_v) / rng * 5000).fillna(0)
+norm_vals = ((log_vals - min_v) / rng).fillna(0)
+
+column_df["elevation"] = (norm_vals * 3000).fillna(0)
 column_df["metric_value"] = vals.round(1)
+column_df["norm"] = norm_vals
 
 # 색상 (YlOrRd)
 colors = []
-for v in vals:
-    norm = (v - min_v) / rng if rng > 0 else 0
+for n in norm_vals:
     r = 255
-    g = int(255 * (1 - norm * 0.8))
-    b = int(255 * (1 - norm))
-    colors.append([r, g, b, int(160 + norm * 60)])
+    g = int(255 * (1 - n * 0.8))
+    b = int(255 * (1 - n))
+    colors.append([r, g, b, int(160 + n * 60)])
 column_df["fill_color"] = colors
 
 # ══════════════════════════════════════
@@ -136,32 +139,67 @@ map_col, profile_col = st.columns([3, 1])
 with map_col:
     st.subheader(f"서울 법정동 — {selected_metric} ({selected_time_label}, {weekday_label})")
 
-    layer = pdk.Layer(
-        "ColumnLayer",
-        data=column_df,
-        get_position=["lon", "lat"],
-        get_elevation="elevation",
-        elevation_scale=50,
-        get_fill_color="fill_color",
-        radius=200,
-        pickable=True,
-        auto_highlight=True,
-        extruded=is_3d,
-    )
+    if is_3d:
+        # ── 3D: ColumnLayer ──
+        layer = pdk.Layer(
+            "ColumnLayer",
+            data=column_df,
+            get_position=["lon", "lat"],
+            get_elevation="elevation",
+            elevation_scale=30,
+            get_fill_color="fill_color",
+            radius=200,
+            pickable=True,
+            auto_highlight=True,
+            extruded=True,
+        )
+        view = pdk.ViewState(
+            latitude=37.51, longitude=126.95, zoom=11.5,
+            pitch=45, bearing=-27,
+        )
+        deck = pdk.Deck(
+            layers=[layer],
+            initial_view_state=view,
+            tooltip={"text": "{name}\n" + f"{selected_metric}: " + "{metric_value}"},
+            map_provider="carto",
+            map_style="light",
+        )
+    else:
+        # ── 2D: GeoJsonLayer 코로플레스 (동 영역 전체 채색) ──
+        import json
+        geojson_data = load_geojson()
+        # 각 feature에 metric 값 + 색상 주입
+        norm_map = column_df.set_index("district_code")[["norm", "metric_value"]].to_dict("index")
+        for feat in geojson_data["features"]:
+            dc = feat["properties"]["district_code"]
+            info = norm_map.get(dc, {"norm": 0, "metric_value": 0})
+            n = info["norm"]
+            feat["properties"]["metric_value"] = info["metric_value"]
+            r, g, b = 255, int(255 * (1 - n * 0.8)), int(255 * (1 - n))
+            a = int(120 + n * 100)
+            feat["properties"]["fill_color"] = [r, g, b, a]
 
-    view = pdk.ViewState(
-        latitude=37.51, longitude=126.95, zoom=11.5,
-        pitch=45 if is_3d else 0,
-        bearing=-27 if is_3d else 0,
-    )
-
-    deck = pdk.Deck(
-        layers=[layer],
-        initial_view_state=view,
-        tooltip={"text": "{name}\n" + f"{selected_metric}: " + "{metric_value}"},
-        map_provider="carto",
-        map_style="light",
-    )
+        layer = pdk.Layer(
+            "GeoJsonLayer",
+            data=geojson_data,
+            get_fill_color="properties.fill_color",
+            get_line_color=[80, 80, 80, 160],
+            line_width_min_pixels=1,
+            pickable=True,
+            auto_highlight=True,
+            stroked=True,
+        )
+        view = pdk.ViewState(
+            latitude=37.51, longitude=126.95, zoom=11.5,
+            pitch=0, bearing=0,
+        )
+        deck = pdk.Deck(
+            layers=[layer],
+            initial_view_state=view,
+            tooltip={"text": "{name}\n" + f"{selected_metric}: " + "{metric_value}"},
+            map_provider="carto",
+            map_style="light",
+        )
     st.pydeck_chart(deck)
 
 with profile_col:
