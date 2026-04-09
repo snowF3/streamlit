@@ -39,7 +39,7 @@ def _container(**kwargs):
 st.markdown("""<style>
 .block-container { padding-top: 1rem !important; padding-bottom: 0 !important; }
 [data-testid="stVerticalBlock"] { gap: 0.4rem !important; }
-[data-testid="stColumn"]:nth-child(2) [data-testid="stVerticalBlock"] { gap: 0.7rem !important; }
+[data-testid="stColumn"]:nth-child(2) [data-testid="stVerticalBlock"] { gap: 1rem !important; }
 [data-testid="stColumn"]:first-child [data-testid="stVerticalBlock"] { gap: 0.2rem !important; }
 .signal-header {
     font-size: 12px; font-weight: 700; padding: 8px 0 6px;
@@ -47,11 +47,11 @@ st.markdown("""<style>
 }
 .kw-tag {
     display: inline-block; padding: 4px 10px; border-radius: 16px;
-    font-size: 11px; font-weight: 500; margin: 2px 3px 2px 0;
+    font-size: 11px; font-weight: 500; margin: 2px 3px 8px 0;
     border: 1px solid rgba(128,128,128,0.2); background: rgba(128,128,128,0.06);
 }
-.detail-title-sub { font-size: 12px; opacity: 0.5; margin-bottom: 1px; }
-.detail-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.detail-title-sub { font-size: 12px; opacity: 0.5; margin-bottom: 6px; }
+.detail-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
 .detail-title .name { font-size: 18px; font-weight: 800; }
 .detail-title .change { font-size: 18px; font-weight: 800; }
 .detail-title .change.up { color: #f04452; }
@@ -280,33 +280,6 @@ with col_left:
                 unsafe_allow_html=True,
             )
 
-    # ── 근처 시그널 (parquet에서 직접 조회) ──
-    # ── 근처 시그널 (별도 컨테이너) ──
-    my_nb = st.session_state.my_neighborhood
-    my_city = my_nb.split(" ")[0] if my_nb else ""
-    my_short = my_nb.split(" ")[-1] if my_nb else ""
-    my_dc = rm[rm["label"] == my_nb]["district_code"].values[0] if my_nb in rm["label"].values else ""
-    same_city_hp = hp[(hp["city"] == my_city) & (hp["STANDARD_YEAR_MONTH"] == selected_ym)].sort_values("hotplace_score", ascending=False)
-    my_row = same_city_hp[same_city_hp["DISTRICT_CODE"] == my_dc]
-    others_rows = same_city_hp[same_city_hp["DISTRICT_CODE"] != my_dc].head(3)
-    nearby_rows = pd.concat([my_row, others_rows])
-    nearby = [_hp_to_signal(row) for _, row in nearby_rows.iterrows()]
-    if nearby:
-        with _container(border=True):
-            st.markdown(f'<div style="font-size:13px; font-weight:800; margin-bottom:4px;">{my_short} 근처 시그널</div>', unsafe_allow_html=True)
-            for ni, r in enumerate(nearby):
-                rcolor = "#f04452" if r["direction"] == "up" else "#3182f6"
-                rp = "+" if r["direction"] == "up" else ""
-                rk = r["keywords"][0] if r["keywords"] else ""
-                st.markdown(
-                    f'<div style="padding:6px 0; border-bottom:1px solid rgba(128,128,128,0.06);">'
-                    f'  <div style="font-size:12px; font-weight:600;">{r["name"]}</div>'
-                    f'  <div style="font-size:11px; margin-top:2px;">'
-                    f'    <span style="color:{rcolor};">{rp}{r["composite"]}점</span>'
-                    f'    <span style="opacity:0.35;"> · {rk}</span></div>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
 
 # ─────────────────────────────────────
 # MIDDLE: 상세 패널
@@ -421,6 +394,32 @@ with col_mid:
             )
     else:
         st.caption("같은 구의 다른 시그널이 없습니다.")
+
+    # ── 내 동네 근처 시그널 ──
+    st.divider()
+    my_nb = st.session_state.my_neighborhood
+    my_city = my_nb.split(" ")[0] if my_nb else ""
+    my_short = my_nb.split(" ")[-1] if my_nb else ""
+    my_dc = rm[rm["label"] == my_nb]["district_code"].values[0] if my_nb in rm["label"].values else ""
+    same_city_hp = hp[(hp["city"] == my_city) & (hp["STANDARD_YEAR_MONTH"] == selected_ym)].sort_values("hotplace_score", ascending=False)
+    my_row_hp = same_city_hp[same_city_hp["DISTRICT_CODE"] == my_dc]
+    others_hp = same_city_hp[same_city_hp["DISTRICT_CODE"] != my_dc].head(3)
+    nearby_rows = pd.concat([my_row_hp, others_hp])
+    nearby = [_hp_to_signal(row) for _, row in nearby_rows.iterrows()]
+    if nearby:
+        st.markdown(f'<div style="font-size:13px; font-weight:800; margin-bottom:6px;">{my_short} 근처 시그널</div>', unsafe_allow_html=True)
+        for r in nearby:
+            rcolor = "#f04452" if r["direction"] == "up" else "#3182f6"
+            rp = "+" if r["direction"] == "up" else ""
+            rk = r["keywords"][0] if r["keywords"] else ""
+            st.markdown(
+                f'<div style="font-size:11px; padding:4px 0; border-bottom:1px solid rgba(128,128,128,0.06);">'
+                f'  <span style="font-weight:600;">{r["name"]}</span>'
+                f'  <span style="color:{rcolor}; font-weight:600;"> {rp}{r["composite"]}점</span>'
+                f'  <span style="opacity:0.3;"> · {rk}</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
 
 # ─────────────────────────────────────
 # RIGHT: 내 동네 프로파일
