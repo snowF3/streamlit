@@ -86,7 +86,8 @@ card_city = card_agg[(card_agg["DISTRICT_CODE"].isin(city_dcs)) & (card_agg["STA
 # ── 데이터 필터 ──
 pop_d = pop_agg[(pop_agg["DISTRICT_CODE"] == dc) & (pop_agg["STANDARD_YEAR_MONTH"] == selected_month)]
 card_d = card_agg[(card_agg["DISTRICT_CODE"] == dc) & (card_agg["STANDARD_YEAR_MONTH"] == selected_month)]
-prev_month = all_months[st.session_state.profile_ym_idx + 1] if st.session_state.profile_ym_idx + 1 < len(all_months) else None
+ym_idx = ym_labels.index(selected_ym_label)
+prev_month = all_months[ym_idx + 1] if ym_idx + 1 < len(all_months) else None
 pop_prev = pop_agg[(pop_agg["DISTRICT_CODE"] == dc) & (pop_agg["STANDARD_YEAR_MONTH"] == prev_month)] if prev_month else pd.DataFrame()
 card_prev = card_agg[(card_agg["DISTRICT_CODE"] == dc) & (card_agg["STANDARD_YEAR_MONTH"] == prev_month)] if prev_month else pd.DataFrame()
 
