@@ -16,18 +16,6 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# === 버전 체크 (임시) ===
-st.sidebar.markdown("### 🔧 환경 정보")
-st.sidebar.write(f"Streamlit: **{st.__version__}**")
-st.sidebar.write(f"st.popover: **{hasattr(st, 'popover')}**")
-st.sidebar.write(f"st.dialog: **{hasattr(st, 'dialog')}**")
-st.sidebar.write(f"st.chat_message: **{hasattr(st, 'chat_message')}**")
-st.sidebar.write(f"st.chat_input: **{hasattr(st, 'chat_input')}**")
-st.sidebar.write(f"st.rerun: **{hasattr(st, 'rerun')}**")
-st.sidebar.write(f"st.experimental_rerun: **{hasattr(st, 'experimental_rerun')}**")
-st.sidebar.markdown("---")
-# === 버전 체크 끝 ===
-
 from data_loader import (
     load_region_master, load_population_agg, load_card_sales_agg,
     load_card_sales_time, load_population_time, load_population_demo,
