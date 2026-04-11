@@ -219,13 +219,8 @@ def render_sidebar_chat():
     with st.sidebar:
         # 헤더
         st.markdown("""
-        <div style="text-align:center;padding:16px 10px 12px;">
-            <div style="font-size:24px;margin-bottom:4px;">🤖</div>
-            <div style="font-size:14px;font-weight:700;">AI 에이전트</div>
-            <div style="font-size:9px;color:#888;margin-top:2px;">Snowflake Cortex</div>
-        </div>
+        <div style="padding:8px 0 4px;font-size:13px;font-weight:600;">AI 에이전트</div>
         """, unsafe_allow_html=True)
-
         st.markdown("---")
 
         # 대화 히스토리 (위에)
