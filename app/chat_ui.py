@@ -196,7 +196,8 @@ def _answer(q, hist_list, pctx="", sel_d=""):
 - 인구는 천 단위 구분 (예: 45935 → 45,935명)
 - 데이터에 없으면 "추정"이라고 명시
 - 절대 되묻지 마세요
-- 간결하게 핵심만 답변
+- 자세하고 친절하게 설명하세요. 수치의 의미와 시사점을 함께 알려주세요.
+- 비교나 분석 시에는 어떤 점이 특이하고 어떤 의미가 있는지 해석을 포함하세요.
 - 한국어로 답변
 
 질문: {q}"""
@@ -248,14 +249,25 @@ def render_sidebar_chat():
         if not st.session_state.chat_messages:
             st.caption("💡 추천 질문")
             qs = [
-                ("신당동 거주/직장/방문 인구 알려줘", "🔍 신당동 유동인구"),
-                ("방문인구 증가율 Top 5 동네는?", "🔥 핫플 Top 5"),
-                ("신당동 vs 여의도동 매출 비교", "⚖️ 매출 비교"),
-                ("잠원동에서 어떤 업종이 유망해?", "💡 업종 추천"),
+                ("신당동의 거주인구, 직장인구, 방문인구 각각 알려주고 어떤 특징이 있는지 분석해줘", "🔍 신당동 유동인구"),
+                ("최근 방문인구가 가장 많이 늘어난 동네 Top 5와 그 이유를 분석해줘", "🔥 핫플 Top 5"),
+                ("신당동과 여의도동의 유동인구와 매출을 비교 분석해줘", "⚖️ 매출 비교"),
+                ("잠원동의 소비 데이터를 분석해서 어떤 업종이 유망한지 추천해줘", "💡 업종 추천"),
             ]
-            for query, label in qs:
-                if st.button(label, key=f"q_{label}", use_container_width=True):
-                    _do_ask(query, "", "")
+
+            # session_state로 버튼 클릭 추적 (연쇄 방지)
+            if "pending_q" not in st.session_state:
+                st.session_state.pending_q = None
+
+            for i, (query, label) in enumerate(qs):
+                if st.button(label, key=f"q_{i}", use_container_width=True):
+                    st.session_state.pending_q = query
+
+            # 클릭된 질문 처리
+            if st.session_state.pending_q:
+                q = st.session_state.pending_q
+                st.session_state.pending_q = None
+                _do_ask(q, "", "")
 
         # 입력 (아래)
         st.markdown("---")
