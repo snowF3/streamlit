@@ -155,62 +155,245 @@ def calc_purchasing_power(income_agg):
     return scores.set_index("DISTRICT_CODE")["purchasing_power"]
 
 
-def calc_derived_metrics(pop_time_df, card_agg_df, pop_agg_df, income_agg_df, year_month):
+def calc_monthly_signals(pop_agg, card_agg, region_master,
+                         realestate=None, install_agg=None, top_n=3,
+                         weights=None):
     """
-    디지털 트윈용 파생지표 계산
-
-    Returns: DataFrame indexed by DISTRICT_CODE with columns:
-        total_pop, visit_ratio, day_night_ratio, sales_per_capita, consumption_hhi, avg_income
+    월별 핫플 점수 변동 TOP 시그널 생성
+    calc_hotplace_score와 동일한 5개 지표를 월별로 적용:
+    방문인구(25%) + 카페매출(20%) + 유동인구(20%) + 매매가(20%) + 신규설치(15%)
     """
-    ym = year_month
+    if weights is None:
+        weights = {"visiting": 0.25, "cafe": 0.20, "young": 0.20, "price": 0.20, "install": 0.15}
 
-    # ── 총 유동인구 + 방문 비중 ──
-    pop_m = pop_agg_df[pop_agg_df["STANDARD_YEAR_MONTH"] == ym].copy()
-    pop_m["total_pop"] = (pop_m["RESIDENTIAL_POPULATION"]
-                          + pop_m["WORKING_POPULATION"]
-                          + pop_m["VISITING_POPULATION"])
-    pop_m["visit_ratio"] = pop_m["VISITING_POPULATION"] / pop_m["total_pop"].replace(0, np.nan)
-    pop_summary = pop_m.set_index("DISTRICT_CODE")[["total_pop", "visit_ratio", "VISITING_POPULATION"]]
+    rm = region_master.copy()
+    name_map = rm.set_index("district_code").apply(
+        lambda r: f"{r['city_kor']} {r['district_kor']}", axis=1
+    ).to_dict()
+    city_map = rm.set_index("district_code")["city_kor"].to_dict()
 
-    # ── 낮밤 인구비 ──
-    pt = pop_time_df[(pop_time_df["STANDARD_YEAR_MONTH"] == ym)
-                     & (pop_time_df["WEEKDAY_WEEKEND"] == "W")].copy()
-    pt["total"] = pt["RESIDENTIAL_POPULATION"] + pt["WORKING_POPULATION"] + pt["VISITING_POPULATION"]
-    day_slots = ["T06", "T09", "T12"]
-    night_slots = ["T18", "T21", "T24"]
-    day_pop = pt[pt["TIME_SLOT"].isin(day_slots)].groupby("DISTRICT_CODE")["total"].sum()
-    night_pop = pt[pt["TIME_SLOT"].isin(night_slots)].groupby("DISTRICT_CODE")["total"].sum()
-    day_night = (day_pop / night_pop.replace(0, np.nan)).round(2)
-    day_night.name = "day_night_ratio"
+    months = sorted(pop_agg["STANDARD_YEAR_MONTH"].unique())
+    if len(months) < 2:
+        return []
 
-    # ── 1인당 매출 ──
-    card_m = card_agg_df[card_agg_df["STANDARD_YEAR_MONTH"] == ym].copy()
-    card_by_dc = card_m.set_index("DISTRICT_CODE")
-    sales_per_cap = (card_by_dc["TOTAL_SALES"] / pop_summary["total_pop"].replace(0, np.nan)).round(0)
-    sales_per_cap.name = "sales_per_capita"
+    def fmt(m):
+        s = str(m)
+        return f"{s[:4]}.{s[4:6]}"
 
-    # ── 소비 집중도 (HHI) ──
-    sales_cols = [c for c in card_m.columns if c.endswith("_SALES") and c != "TOTAL_SALES"]
-    hhi_rows = {}
-    for _, row in card_m.iterrows():
-        dc = row["DISTRICT_CODE"]
-        total = row["TOTAL_SALES"]
-        if total and total > 0:
-            hhi = sum((row[c] / total) ** 2 for c in sales_cols if pd.notna(row[c]))
-            hhi_rows[dc] = round(hhi, 4)
-    hhi_series = pd.Series(hhi_rows, name="consumption_hhi")
-    hhi_series.index.name = "DISTRICT_CODE"
+    # ── 부동산 가격 변동률 (전체 기간, dc별) ──
+    price_chg_map = {}
+    if realestate is not None and len(realestate) > 0:
+        re_emd = realestate[realestate["REGION_LEVEL"] == "emd"].copy()
+        if len(re_emd) > 0 and "BJD_CODE" in re_emd.columns:
+            re_emd["DISTRICT_CODE"] = re_emd["BJD_CODE"].astype(str).str[:8]
+            re_months = sorted(re_emd["YYYYMMDD"].unique())
+            if len(re_months) >= 2:
+                re_prev = re_emd[re_emd["YYYYMMDD"] == re_months[-2]].groupby("DISTRICT_CODE")["MEME_PRICE_PER_SUPPLY_PYEONG"].mean()
+                re_curr = re_emd[re_emd["YYYYMMDD"] == re_months[-1]].groupby("DISTRICT_CODE")["MEME_PRICE_PER_SUPPLY_PYEONG"].mean()
+                for dc in re_curr.index:
+                    if dc in re_prev.index and re_prev[dc] > 0:
+                        price_chg_map[dc] = (re_curr[dc] - re_prev[dc]) / re_prev[dc] * 100
 
-    # ── 평균 소득 ──
-    inc_m = income_agg_df[income_agg_df["STANDARD_YEAR_MONTH"] == ym].copy()
-    avg_income = inc_m.set_index("DISTRICT_CODE")["AVERAGE_INCOME"] if "AVERAGE_INCOME" in inc_m.columns else pd.Series(dtype=float)
-    avg_income.name = "avg_income"
+    # ── 신규설치 변동률 (시군구→법정동 매핑) ──
+    install_chg_map = {}
+    if install_agg is not None and len(install_agg) > 0:
+        inst_months = sorted(install_agg["YEAR_MONTH"].unique())
+        if len(inst_months) >= 2:
+            ic = install_agg[install_agg["YEAR_MONTH"] == inst_months[-1]].groupby("INSTALL_CITY")["OPEN_COUNT"].sum()
+            ip = install_agg[install_agg["YEAR_MONTH"] == inst_months[-2]].groupby("INSTALL_CITY")["OPEN_COUNT"].sum()
+            city_to_dcs = rm.groupby("city_kor")["district_code"].apply(list).to_dict()
+            for city_name in ic.index:
+                if city_name in ip.index and ip[city_name] > 0:
+                    chg = (ic[city_name] - ip[city_name]) / ip[city_name] * 100
+                    for dc in city_to_dcs.get(city_name, []):
+                        install_chg_map[dc] = chg
 
-    # ── 병합 ──
-    result = pop_summary[["total_pop", "visit_ratio"]].copy()
-    result = result.join(day_night, how="left")
-    result = result.join(sales_per_cap, how="left")
-    result = result.join(hhi_series, how="left")
-    result = result.join(avg_income, how="left")
-    result = result.fillna(0)
-    return result
+    all_signals = []
+
+    for i in range(1, len(months)):
+        prev_m, curr_m = months[i - 1], months[i]
+        months_ago = len(months) - 1 - i
+
+        # ── 유동인구 ──
+        pc = pop_agg[pop_agg["STANDARD_YEAR_MONTH"] == curr_m].copy()
+        pp = pop_agg[pop_agg["STANDARD_YEAR_MONTH"] == prev_m].copy()
+        pc["total"] = pc["RESIDENTIAL_POPULATION"] + pc["WORKING_POPULATION"] + pc["VISITING_POPULATION"]
+        pp["total"] = pp["RESIDENTIAL_POPULATION"] + pp["WORKING_POPULATION"] + pp["VISITING_POPULATION"]
+
+        pop_c = pc.groupby("DISTRICT_CODE").agg({
+            "total": "sum", "RESIDENTIAL_POPULATION": "sum",
+            "WORKING_POPULATION": "sum", "VISITING_POPULATION": "sum",
+        })
+        pop_p = pp.groupby("DISTRICT_CODE").agg({
+            "total": "sum", "RESIDENTIAL_POPULATION": "sum",
+            "WORKING_POPULATION": "sum", "VISITING_POPULATION": "sum",
+        })
+
+        # ── 카드매출 ──
+        cc = card_agg[card_agg["STANDARD_YEAR_MONTH"] == curr_m]
+        cp_df = card_agg[card_agg["STANDARD_YEAR_MONTH"] == prev_m]
+        has_sales = "TOTAL_SALES" in cc.columns
+        sales_c = cc.groupby("DISTRICT_CODE")["TOTAL_SALES"].sum() if has_sales else pd.Series(dtype=float)
+        sales_p = cp_df.groupby("DISTRICT_CODE")["TOTAL_SALES"].sum() if has_sales else pd.Series(dtype=float)
+
+        common = set(pop_c.index) & set(pop_p.index)
+        items = []
+
+        for dc in common:
+            pt = pop_p.loc[dc, "total"]
+            if pt == 0:
+                continue
+            ct = pop_c.loc[dc, "total"]
+
+            # 5개 지표 변동률
+            vc = pop_c.loc[dc, "VISITING_POPULATION"]
+            vp = pop_p.loc[dc, "VISITING_POPULATION"]
+            visiting_chg = (vc - vp) / vp * 100 if vp > 0 else 0
+            visit_ratio = vc / ct * 100 if ct > 0 else 0
+
+            pop_chg = (ct - pt) / pt * 100  # young (유동인구 총합)
+
+            # 카페+식음료 매출
+            cafe_chg = 0
+            coffee_chg = 0
+            food_chg = 0
+            sales_chg = 0
+            sv = 0
+            if dc in sales_c.index and dc in sales_p.index and sales_p[dc] > 0:
+                sales_chg = (sales_c[dc] - sales_p[dc]) / sales_p[dc] * 100
+                sv = sales_c[dc]
+
+            cc_row = cc[cc["DISTRICT_CODE"] == dc] if "DISTRICT_CODE" in cc.columns else pd.DataFrame()
+            cp_row = cp_df[cp_df["DISTRICT_CODE"] == dc] if "DISTRICT_CODE" in cp_df.columns else pd.DataFrame()
+            if not cc_row.empty and not cp_row.empty:
+                cafe_sum_c, cafe_sum_p = 0, 0
+                for col in ["COFFEE_SALES", "FOOD_SALES"]:
+                    if col in cc_row.columns:
+                        cafe_sum_c += cc_row[col].values[0]
+                        cafe_sum_p += cp_row[col].values[0]
+                        if col == "COFFEE_SALES" and cp_row[col].values[0] > 0:
+                            coffee_chg = (cc_row[col].values[0] - cp_row[col].values[0]) / cp_row[col].values[0] * 100
+                        if col == "FOOD_SALES" and cp_row[col].values[0] > 0:
+                            food_chg = (cc_row[col].values[0] - cp_row[col].values[0]) / cp_row[col].values[0] * 100
+                if cafe_sum_p > 0:
+                    cafe_chg = (cafe_sum_c - cafe_sum_p) / cafe_sum_p * 100
+
+            price_chg = price_chg_map.get(dc, 0)
+            install_chg = install_chg_map.get(dc, 0)
+
+            # ── 핫플 점수 (calc_hotplace_score와 동일 가중합) ──
+            composite = (
+                visiting_chg * weights["visiting"]
+                + cafe_chg * weights["cafe"]
+                + pop_chg * weights["young"]
+                + price_chg * weights["price"]
+                + install_chg * weights["install"]
+            )
+
+            # ── 거주/직장 세부 ──
+            rc = pop_c.loc[dc, "RESIDENTIAL_POPULATION"]
+            rp = pop_p.loc[dc, "RESIDENTIAL_POPULATION"]
+            res_chg = (rc - rp) / rp * 100 if rp > 0 else 0
+            wc = pop_c.loc[dc, "WORKING_POPULATION"]
+            wp = pop_p.loc[dc, "WORKING_POPULATION"]
+            work_chg = (wc - wp) / wp * 100 if wp > 0 else 0
+
+            # ── 변동 원인 & 키워드 ──
+            reasons = []
+            keywords = []
+            sources = ["SPH 유동인구", "SPH 카드매출"]
+
+            if abs(pop_chg) > 2:
+                d = "증가" if pop_chg > 0 else "감소"
+                reasons.append(
+                    f"총 유동인구가 전월 대비 {abs(pop_chg):.1f}% {d}했어요. "
+                    f"({pt:,.0f}명 → {ct:,.0f}명, {abs(ct - pt):,.0f}명 {d})"
+                )
+                keywords.append(f"유동인구 {d}")
+
+            sub_details = []
+            if abs(res_chg) > 3:
+                sub_details.append(f"거주인구 {res_chg:+.1f}%")
+            if abs(work_chg) > 3:
+                sub_details.append(f"직장인구 {work_chg:+.1f}%")
+            if abs(visiting_chg) > 3:
+                sub_details.append(f"방문인구 {visiting_chg:+.1f}%")
+            if sub_details:
+                reasons.append(f"세부적으로 {', '.join(sub_details)}의 변동이 있었어요.")
+
+            if abs(sales_chg) > 2:
+                d = "증가" if sales_chg > 0 else "감소"
+                sv_disp = f"{sv/1e8:,.1f}억원" if sv > 1e8 else f"{sv/1e4:,.0f}만원"
+                reasons.append(f"카드매출이 전월 대비 {abs(sales_chg):.1f}% {d}하여 월 {sv_disp} 규모예요.")
+                keywords.append(f"소비 {d}")
+
+            cafe_details = []
+            if abs(coffee_chg) > 5:
+                cafe_details.append(f"커피 매출 {coffee_chg:+.1f}%")
+            if abs(food_chg) > 5:
+                cafe_details.append(f"식음료 매출 {food_chg:+.1f}%")
+            if cafe_details:
+                reasons.append(f"특히 {', '.join(cafe_details)}로 상권 {'활성화' if cafe_chg > 0 else '위축'} 신호가 감지돼요.")
+                if coffee_chg > 10:
+                    keywords.append("카페 트렌드")
+
+            if abs(price_chg) > 2:
+                d = "상승" if price_chg > 0 else "하락"
+                reasons.append(f"매매 평단가가 {abs(price_chg):.1f}% {d}하며 부동산 시장이 {'상승' if price_chg > 0 else '조정'} 국면이에요.")
+                keywords.append(f"매매가 {d}")
+                sources.append("리치고 부동산")
+
+            if abs(install_chg) > 10:
+                d = "증가" if install_chg > 0 else "감소"
+                reasons.append(f"인터넷 신규설치가 {abs(install_chg):.0f}% {d}하며 전입 수요가 {'늘고' if install_chg > 0 else '줄고'} 있어요.")
+                keywords.append(f"전입 {d}")
+                sources.append("아정당 신규설치")
+
+            if visit_ratio > 40:
+                reasons.append(f"방문인구 비중이 {visit_ratio:.0f}%로 외부 유입이 활발한 상권이에요.")
+                keywords.append("핫플 시그널")
+
+            if not reasons:
+                reasons.append("전반적인 지표가 소폭 변동했어요.")
+                keywords.append("안정적")
+
+            items.append({
+                "dc": dc,
+                "name": name_map.get(dc, dc),
+                "city": city_map.get(dc, ""),
+                "month": curr_m,
+                "month_label": fmt(curr_m),
+                "months_ago": months_ago,
+                "direction": "up" if composite >= 0 else "down",
+                "composite": round(composite, 1),
+                # 5개 지표 (핫플 점수 구성)
+                "visiting_chg": round(visiting_chg, 1),
+                "cafe_chg": round(cafe_chg, 1),
+                "pop_chg": round(pop_chg, 1),
+                "price_chg": round(price_chg, 1),
+                "install_chg": round(install_chg, 1),
+                # 추가 정보
+                "sales_chg": round(sales_chg, 1),
+                "visit_ratio": round(visit_ratio, 1),
+                "total_pop": ct,
+                "total_sales": sv,
+                "reasons": reasons,
+                "keywords": keywords,
+                "sources": list(dict.fromkeys(sources)),  # 중복 제거
+                "weights": weights,
+            })
+
+        items.sort(key=lambda x: x["composite"], reverse=True)
+        top = items[:top_n]
+        bottom = items[-top_n:]
+        # 중복 제거 (상위/하위 겹칠 수 있음)
+        seen = set()
+        selected = []
+        for item in top + bottom:
+            if item["dc"] not in seen:
+                seen.add(item["dc"])
+                selected.append(item)
+        all_signals.extend(selected)
+
+    all_signals.sort(key=lambda x: (-x["month"], -abs(x["composite"])))
+    return all_signals
