@@ -1,5 +1,6 @@
 """
-AI 에이전트 — 오른쪽 패널 (각 페이지 콘텐츠 옆에 표시)
+AI 에이전트 — 탭 기반 채팅 (컬럼 중첩 에러 완전 해결)
+st.tabs(["📊 대시보드", "🤖 AI"]) 방식
 """
 import streamlit as st
 import json, re
@@ -74,89 +75,25 @@ def _answer(q, hist_list, pctx="", sel_d=""):
             data=df.to_string(index=False)
         except: pass
     elif d: data=f"{_qpop(d)}\n{_qsales(d)}\n{_qincome(d)}"
-    ctx=f"[화면]{pctx}" if pctx else ""
-    prompt=f"서울동네데이터분석전문가.{ctx}\n[데이터]{data}\n[이전대화]{hist}\n규칙:되묻지마.숫자읽기쉽게.한국어.데이터기반답변.\n질문:{q}"
+    ctx=f"[현재화면]{pctx}" if pctx else ""
+    prompt=f"""서울 동네 데이터 분석 전문가입니다.
+{ctx}
+
+[조회된 실제 데이터]
+{data}
+
+[이전 대화]
+{hist}
+
+[규칙]
+- 위 데이터를 기반으로 답변. 없으면 추측이라고 명시.
+- 절대 되묻지 마세요.
+- 숫자는 읽기 쉽게 (1,234명, 3.5억원)
+- 시뮬레이션: 매출 범위, 고객층, 피크, 리스크 포함
+- 한국어로 답변
+
+질문: {q}"""
     return {"answer":_cortex(prompt,intent in("simulate","compare","recommend")),"intent":intent}
-
-
-# ═══════════════════════════════════════════
-# 오른쪽 채팅 패널
-# ═══════════════════════════════════════════
-
-def get_chat_layout(page_context="", selected_district=""):
-    """
-    페이지 시작 시 호출. 채팅 열림 여부에 따라 레이아웃 반환.
-
-    사용법 (각 페이지에서):
-        from chat_ui import get_chat_layout
-        content_col = get_chat_layout(page_context="동네 지도 - ...")
-        with content_col:
-            # 기존 페이지 콘텐츠 전부
-    """
-    if "chat_messages" not in st.session_state:
-        st.session_state.chat_messages = []
-    if "chat_open" not in st.session_state:
-        st.session_state.chat_open = False
-
-    # 채팅 닫혀있으면: 오른쪽에 작은 버튼만
-    if not st.session_state.chat_open:
-        content_col, btn_col = st.columns([20, 1])
-        with btn_col:
-            if st.button("🤖", key="chat_open_btn", help="AI 에이전트 열기"):
-                st.session_state.chat_open = True
-                _safe_rerun()
-        return content_col
-
-    # 채팅 열려있으면: [콘텐츠 | 채팅] 레이아웃
-    content_col, chat_col = st.columns([3, 1])
-
-    with chat_col:
-        # 닫기 버튼
-        if st.button("✕", key="chat_close_btn", help="닫기"):
-            st.session_state.chat_open = False
-            _safe_rerun()
-
-        # 헤더
-        st.markdown("""<div style="background:linear-gradient(135deg,#6366F1,#8B5CF6);
-            padding:10px 12px;border-radius:8px;margin-bottom:8px;">
-            <span style="color:white;font-size:12px;font-weight:700;">🤖 AI</span>
-            <span style="color:rgba(255,255,255,0.5);font-size:9px;float:right;">Cortex</span>
-        </div>""", unsafe_allow_html=True)
-
-        # 컨텍스트
-        if page_context:
-            st.caption(f"📍 {page_context[:30]}")
-
-        # 추천 질문
-        if not st.session_state.chat_messages:
-            if st.button("🔍 유동인구", key="q_0"): _do_ask("신당동 유동인구 알려줘", page_context, selected_district)
-            if st.button("🧪 시뮬", key="q_1"): _do_ask("서초동 카페 매출?", page_context, selected_district)
-            if st.button("🔥 핫플", key="q_2"): _do_ask("다음 핫플은?", page_context, selected_district)
-            if st.button("⚖️ 비교", key="q_3"): _do_ask("중구 vs 영등포구", page_context, selected_district)
-
-        # 대화
-        for msg in st.session_state.chat_messages:
-            if msg["role"] == "user":
-                st.markdown(f"**🧑 {msg['content']}**")
-            else:
-                badges = {"lookup":"🔍","compare":"⚖️","trend":"📈","simulate":"🧪","recommend":"💡","hotplace":"🔥"}
-                b = badges.get(msg.get("intent",""),"")
-                st.markdown(f"{b} {msg['content']}")
-                st.markdown("---")
-
-        # 입력
-        inp = st.text_input("질문", key="ai_in", label_visibility="collapsed", placeholder="물어보세요...")
-        c1, c2 = st.columns([3, 1])
-        with c1:
-            if st.button("→", key="ai_send"):
-                if inp:
-                    _do_ask(inp, page_context, selected_district)
-        with c2:
-            if st.button("↻", key="ai_clr"):
-                st.session_state.chat_messages = []
-                _safe_rerun()
-
-    return content_col
 
 
 def _do_ask(q, pctx, sel_d):
@@ -166,6 +103,94 @@ def _do_ask(q, pctx, sel_d):
     _safe_rerun()
 
 
+# ═══════════════════════════════════════════
+# 탭 기반 레이아웃 (컬럼 중첩 에러 없음)
+# ═══════════════════════════════════════════
+
+def get_chat_layout(page_context="", selected_district=""):
+    """
+    탭 기반 AI 채팅 레이아웃. 컬럼 중첩 에러 없음.
+
+    사용법:
+        content_tab, ai_tab = get_chat_layout(page_context="동네 프로파일 - 신당동")
+        with content_tab:
+            # 기존 페이지 콘텐츠 (st.columns 자유롭게 사용 가능)
+        # ai_tab은 자동으로 채팅 UI가 렌더링됨
+    """
+    if "chat_messages" not in st.session_state:
+        st.session_state.chat_messages = []
+
+    tab_content, tab_ai = st.tabs(["📊 대시보드", "🤖 AI 에이전트"])
+
+    with tab_ai:
+        # 헤더
+        st.markdown(f"""<div style="background:linear-gradient(135deg,#6366F1,#8B5CF6);
+            padding:14px 20px;border-radius:12px;margin-bottom:16px;">
+            <span style="color:white;font-size:16px;font-weight:700;">🤖 AI 에이전트</span>
+            <span style="color:rgba(255,255,255,0.5);font-size:11px;margin-left:8px;">
+                Snowflake Cortex · 실제 데이터 조회
+            </span>
+            <div style="color:rgba(255,255,255,0.4);font-size:10px;margin-top:4px;">
+                📍 {page_context if page_context else '메인'}
+            </div>
+        </div>""", unsafe_allow_html=True)
+
+        # 추천 질문 (대화 없을 때)
+        if not st.session_state.chat_messages:
+            st.markdown("**💡 이런 질문을 해보세요**")
+            suggestions = {
+                "🔍 신당동 유동인구": "신당동 유동인구 알려줘",
+                "🧪 서초동 카페 시뮬": "서초동에 카페 차리면 매출이?",
+                "🔥 핫플 예측": "다음 핫플은 어디야?",
+                "⚖️ 중구 vs 영등포구": "중구 vs 영등포구 비교",
+                "💡 잠원동 추천": "잠원동에서 뭘 팔면 좋을까?",
+                "📈 신당동 추이": "신당동 최근 추이 보여줘",
+            }
+            cols = st.columns(3)
+            for i, (label, q) in enumerate(suggestions.items()):
+                with cols[i % 3]:
+                    if st.button(label, key=f"sug_{i}", use_container_width=True):
+                        _do_ask(q, page_context, selected_district)
+
+        # 대화 히스토리
+        for msg in st.session_state.chat_messages:
+            if msg["role"] == "user":
+                st.markdown(f"""<div style="text-align:right;margin:10px 0;">
+                    <span style="background:linear-gradient(135deg,#6366F1,#8B5CF6);color:white;
+                    padding:10px 16px;border-radius:18px 18px 4px 18px;display:inline-block;
+                    max-width:70%;font-size:14px;">
+                    {msg['content']}</span></div>""", unsafe_allow_html=True)
+            else:
+                badges = {"lookup":"🔍 조회","compare":"⚖️ 비교","trend":"📈 추이",
+                          "simulate":"🧪 시뮬","recommend":"💡 추천","hotplace":"🔥 핫플"}
+                intent = msg.get("intent","")
+                badge = badges.get(intent, "")
+                st.markdown(f"""<div style="margin:10px 0;">
+                    <span style="background:rgba(255,255,255,0.05);color:#E0E0E0;
+                    padding:12px 16px;border-radius:18px 18px 18px 4px;display:inline-block;
+                    max-width:80%;font-size:14px;line-height:1.6;border:1px solid rgba(255,255,255,0.08);">
+                    {msg['content']}
+                    <span style="display:block;font-size:10px;color:#888;margin-top:6px;">{badge}</span>
+                    </span></div>""", unsafe_allow_html=True)
+
+        # 입력
+        st.markdown("---")
+        c1, c2, c3 = st.columns([6, 1, 1])
+        with c1:
+            inp = st.text_input("질문", key="ai_input", label_visibility="collapsed", placeholder="무엇이든 물어보세요...")
+        with c2:
+            send = st.button("전송", key="ai_send", use_container_width=True)
+        with c3:
+            if st.button("↻", key="ai_clear", use_container_width=True):
+                st.session_state.chat_messages = []
+                _safe_rerun()
+
+        if send and inp:
+            _do_ask(inp, page_context, selected_district)
+
+    return tab_content
+
+
 def render_chat_panel(current_tab="", selected_district="", selected_month="", page_context=""):
-    """하위 호환용 — 기존 페이지에서 호출 시 아무것도 안 함 (get_chat_layout으로 대체)"""
+    """하위 호환용 — 사용하지 않음"""
     pass
