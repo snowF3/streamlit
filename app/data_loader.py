@@ -308,26 +308,7 @@ def load_ajd_ga4():
 
 @st.cache_data(ttl=3600)
 def load_hotplace_monthly():
-    """월별 핫플 점수 — parquet 또는 실시간 계산"""
-    import os
-    # 1) parquet 파일 시도
-    candidates = [
-        os.path.join(os.path.dirname(os.path.dirname(__file__)), "processed_data", "hotplace_monthly.parquet"),
-        "/tmp/appRoot/processed_data/hotplace_monthly.parquet",
-    ]
-    for path in candidates:
-        if os.path.exists(path):
-            return pd.read_parquet(path)
-
-    # 2) Snowflake 테이블 시도
-    try:
-        df = run_query("SELECT * FROM ANALYTICS.HOTPLACE_MONTHLY")
-        if not df.empty:
-            return df
-    except Exception:
-        pass
-
-    # 3) 실시간 계산 fallback
+    """월별 핫플 점수 — Snowflake에서 실시간 계산 (parquet 불필요)"""
     return _calc_hotplace_from_data()
 
 
