@@ -22,11 +22,9 @@ html, body, [data-testid="stAppViewContainer"] { font-size: 14px !important; }
 h2, h3 { font-size: 15px !important; }
 </style>""", unsafe_allow_html=True)
 
-# ── 사이드바: AI 에이전트 (iframe 테스트) ──
-with st.sidebar:
-    st.markdown("**AI 에이전트**")
-    AGENT_URL = "https://app.snowflake.com/dhtnbjt/vu60194/#/streamlit-apps/STREAMLIT_APPS.PUBLIC.AI_AGENT_ONLY"
-    st.markdown(f'<iframe src="{AGENT_URL}" width="100%" height="600" style="border:none;border-radius:8px;"></iframe>', unsafe_allow_html=True)
+# ── 사이드바: AI 에이전트 ──
+from chat_ui import render_sidebar_chat
+render_sidebar_chat()
 
 # ── 상단 탭 네비게이션 ──
 tab_feed, tab_analysis, tab_profile, tab_twin, tab_compare = st.tabs([
