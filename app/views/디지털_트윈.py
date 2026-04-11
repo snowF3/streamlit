@@ -48,13 +48,12 @@ with content_col:
         "L06": [239, 85, 59, 180],      # 실버 - 빨간
     }
 
-    # ── 사이드바: 기준 년월 ──
+    # ── 기준 년월 ──
     pop_agg_all = load_population_agg()
     all_months = sorted(pop_agg_all["STANDARD_YEAR_MONTH"].unique(), reverse=True)
     month_labels = [f"{str(m)[:4]}년 {str(m)[4:6]}월" for m in all_months]
-    selected_month_label = st.sidebar.selectbox("기준 년월", month_labels, index=0)
+    selected_month_label = st.selectbox("기준 년월", month_labels, index=0, key="twin_month")
     selected_month = all_months[month_labels.index(selected_month_label)]
-    st.sidebar.caption(f"선택: {selected_month_label}")
 
 
     # ── 법정동 중심좌표 계산 (데이터 있는 법정동만) ──

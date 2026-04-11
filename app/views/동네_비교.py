@@ -53,7 +53,7 @@ with content_col:
     # ── 기준 년월 선택 ──
     all_months = sorted(pop_agg["STANDARD_YEAR_MONTH"].unique(), reverse=True)
     month_labels = [f"{str(m)[:4]}년 {str(m)[4:6]}월" for m in all_months]
-    selected_month_label = st.sidebar.selectbox("기준 년월", month_labels, index=0)
+    selected_month_label = st.selectbox("기준 년월", month_labels, index=0, key="compare_month")
     selected_month = all_months[month_labels.index(selected_month_label)]
 
     # ── 동네 선택 (최대 3개) ──

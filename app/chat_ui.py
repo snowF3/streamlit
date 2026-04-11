@@ -103,64 +103,63 @@ def _do_ask(q, pctx, sel_d):
 # ═══════════════════════════════════════════
 
 def render_sidebar_chat():
-    """
-    사이드바 전용 AI 채팅 — main.py에서 1회 호출.
-    사이드바가 AI 전용이므로 네비게이션 없이 깔끔.
-    """
+    """사이드바 전용 AI 채팅"""
     if "chat_messages" not in st.session_state:
         st.session_state.chat_messages = []
 
     with st.sidebar:
-        # 헤더
-        st.markdown("""<div style="background:linear-gradient(135deg,#6366F1,#8B5CF6);
-            padding:14px 18px;border-radius:12px;margin-bottom:14px;">
-            <div style="color:white;font-size:16px;font-weight:700;">🤖 AI 에이전트</div>
-            <div style="color:rgba(255,255,255,0.5);font-size:10px;margin-top:2px;">
-                Snowflake Cortex · 실제 데이터 조회
-            </div>
-        </div>""", unsafe_allow_html=True)
+        # ── 헤더 ──
+        st.markdown("""
+        <div style="text-align:center;padding:20px 10px 16px;">
+            <div style="font-size:28px;margin-bottom:6px;">🤖</div>
+            <div style="font-size:15px;font-weight:700;color:#E0E0E0;">AI 에이전트</div>
+            <div style="font-size:10px;color:#888;margin-top:2px;">Snowflake Cortex</div>
+        </div>
+        """, unsafe_allow_html=True)
 
-        # 추천 질문 (대화 없을 때)
+        st.markdown("---")
+
+        # ── 입력 (상단에 배치) ──
+        inp = st.text_input("", key="ai_inp", placeholder="동네 데이터를 물어보세요...")
+        if st.button("전송", key="ai_send", use_container_width=True):
+            if inp:
+                _do_ask(inp, "", "")
+
+        # ── 추천 질문 (대화 없을 때) ──
         if not st.session_state.chat_messages:
-            st.markdown("**💡 추천 질문**")
-            qs = {
-                "🔍 유동인구 조회": "신당동 유동인구 알려줘",
-                "🧪 카페 시뮬레이션": "서초동에 카페 차리면 매출이?",
-                "🔥 핫플 예측": "다음 핫플은 어디야?",
-                "⚖️ 동네 비교": "중구 vs 영등포구 비교",
-                "💡 업종 추천": "잠원동에서 뭘 팔면 좋을까?",
-                "📈 추이 분석": "신당동 최근 추이 보여줘",
-            }
-            for k, v in qs.items():
-                if st.button(k, key=f"q_{k}", use_container_width=True):
-                    _do_ask(v, "", "")
+            st.markdown("")
+            st.caption("💡 이런 질문을 해보세요")
+            qs = [
+                ("신당동 유동인구 알려줘", "🔍 유동인구 조회"),
+                ("서초동에 카페 차리면 매출이?", "🧪 카페 시뮬레이션"),
+                ("다음 핫플은 어디야?", "🔥 핫플 예측"),
+                ("중구 vs 영등포구 비교", "⚖️ 동네 비교"),
+            ]
+            for query, label in qs:
+                if st.button(label, key=f"q_{label}", use_container_width=True):
+                    _do_ask(query, "", "")
 
-        # 대화 히스토리
-        for msg in st.session_state.chat_messages:
-            if msg["role"] == "user":
-                st.markdown(f"**🧑 {msg['content']}**")
-            else:
-                badges = {"lookup":"🔍","compare":"⚖️","trend":"📈","simulate":"🧪","recommend":"💡","hotplace":"🔥"}
-                b = badges.get(msg.get("intent",""), "")
-                st.markdown(f"{b} {msg['content']}")
-                st.markdown("---")
+        # ── 대화 히스토리 ──
+        if st.session_state.chat_messages:
+            st.markdown("---")
+            for i, msg in enumerate(st.session_state.chat_messages):
+                if msg["role"] == "user":
+                    st.markdown(f"""<div style="text-align:right;margin:8px 0;">
+                        <span style="background:#6366F1;color:white;padding:6px 12px;
+                        border-radius:12px 12px 4px 12px;font-size:13px;display:inline-block;">
+                        {msg['content']}</span></div>""", unsafe_allow_html=True)
+                else:
+                    badges = {"lookup":"🔍","compare":"⚖️","trend":"📈",
+                              "simulate":"🧪","recommend":"💡","hotplace":"🔥"}
+                    b = badges.get(msg.get("intent",""), "")
+                    st.markdown(f"""<div style="margin:8px 0;">
+                        <span style="background:rgba(255,255,255,0.04);color:#ccc;padding:8px 12px;
+                        border-radius:12px 12px 12px 4px;font-size:12px;line-height:1.5;
+                        display:inline-block;border:1px solid rgba(255,255,255,0.06);">
+                        {b} {msg['content']}</span></div>""", unsafe_allow_html=True)
 
-        # 입력
-        inp = st.text_input("질문", key="ai_inp", label_visibility="collapsed", placeholder="무엇이든 물어보세요...")
-        c1, c2 = st.columns([4, 1])
-        with c1:
-            if st.button("전송 →", key="ai_send", use_container_width=True):
-                if inp:
-                    _do_ask(inp, "", "")
-        with c2:
-            if st.button("↻", key="ai_clr"):
+            # 초기화 버튼 (대화 있을 때만)
+            st.markdown("")
+            if st.button("대화 초기화", key="ai_clr", use_container_width=True):
                 st.session_state.chat_messages = []
                 _safe_rerun()
-
-
-# 하위 호환
-def get_chat_layout(page_context="", selected_district=""):
-    return st.container()
-
-def render_chat_panel(current_tab="", selected_district="", selected_month="", page_context=""):
-    pass
