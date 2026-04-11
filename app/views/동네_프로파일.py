@@ -24,20 +24,17 @@ from charts import (
     realestate_trend_chart, income_distribution_chart, job_donut_chart,
     TIME_SLOT_KOR,
 )
-from chat_ui import get_chat_layout
 
-# ── CSS ──
-st.markdown("""<style>
-html, body, [data-testid="stAppViewContainer"] { font-size: 14px !important; }
-[data-testid="stMetricValue"] { font-size: 20px !important; }
-[data-testid="stMetricLabel"] { font-size: 11px !important; }
-[data-testid="stMetricDelta"] { font-size: 11px !important; }
-h2, h3 { font-size: 15px !important; }
-</style>""", unsafe_allow_html=True)
 
-content_col = get_chat_layout(page_context="동네 프로파일")
-# -- 이하 모든 콘텐츠를 content_col 안에 --
-with content_col:
+def render():
+    # ── CSS ──
+    st.markdown("""<style>
+    html, body, [data-testid="stAppViewContainer"] { font-size: 14px !important; }
+    [data-testid="stMetricValue"] { font-size: 20px !important; }
+    [data-testid="stMetricLabel"] { font-size: 11px !important; }
+    [data-testid="stMetricDelta"] { font-size: 11px !important; }
+    h2, h3 { font-size: 15px !important; }
+    </style>""", unsafe_allow_html=True)
 
     # ── 데이터 로드 ──
     try:
