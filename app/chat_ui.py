@@ -196,9 +196,19 @@ def _answer(q, hist_list, pctx="", sel_d=""):
 - 인구는 천 단위 구분 (예: 45935 → 45,935명)
 - 데이터에 없으면 "추정"이라고 명시
 - 절대 되묻지 마세요
-- 자세하고 친절하게 설명하세요. 수치의 의미와 시사점을 함께 알려주세요.
-- 비교나 분석 시에는 어떤 점이 특이하고 어떤 의미가 있는지 해석을 포함하세요.
 - 한국어로 답변
+
+[답변 형식 — 반드시 지켜주세요]
+- 핵심 요약을 먼저 2~3줄로 작성
+- 수치가 있으면 반드시 마크다운 표(|)로 정리
+- 표 예시:
+| 항목 | 수치 | 비중 |
+|------|------|------|
+| 식음료 | 130.2억원 | 16.7% |
+- 글씨 크기를 통일 (제목은 ###, 소제목은 ####)
+- 시사점/인사이트는 별도 섹션으로 분리
+- 추천이 있으면 우선순위를 번호로 매기기
+- 불필요한 반복 설명 없이 핵심만 간결하게
 
 질문: {q}"""
 
@@ -219,14 +229,7 @@ def render_sidebar_chat():
 
     with st.sidebar:
         # 헤더
-        st.markdown("""
-        <div style="text-align:center;padding:16px 10px 12px;">
-            <div style="font-size:24px;margin-bottom:4px;">🤖</div>
-            <div style="font-size:14px;font-weight:700;">AI 에이전트</div>
-            <div style="font-size:9px;color:#888;margin-top:2px;">Snowflake Cortex</div>
-        </div>
-        """, unsafe_allow_html=True)
-
+        st.markdown("""<div style="padding:6px 0 4px;font-size:13px;font-weight:600;">AI 에이전트</div>""", unsafe_allow_html=True)
         st.markdown("---")
 
         # 대화 히스토리 (위에)
@@ -238,11 +241,8 @@ def render_sidebar_chat():
                         border-radius:10px 10px 3px 10px;font-size:12px;display:inline-block;max-width:90%;">
                         {msg['content']}</span></div>""", unsafe_allow_html=True)
                 else:
-                    st.markdown(f"""<div style="margin:6px 0;">
-                        <span style="background:#1e1e2e;color:#e0e0e0;padding:8px 10px;
-                        border-radius:10px 10px 10px 3px;font-size:12px;line-height:1.5;
-                        display:inline-block;max-width:95%;">
-                        {msg['content']}</span></div>""", unsafe_allow_html=True)
+                    # 마크다운 표/제목 지원을 위해 st.markdown 직접 사용
+                    st.markdown(msg['content'])
             st.markdown("---")
 
         # 추천 질문 (대화 없을 때만)
