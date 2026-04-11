@@ -14,19 +14,16 @@ from data_loader import (
 )
 from scoring import calc_hotplace_score, calc_purchasing_power
 from charts import hotplace_score_bar
-from chat_ui import get_chat_layout
 
-# ── CSS ──
-st.markdown("""<style>
-html, body, [data-testid="stAppViewContainer"] { font-size: 14px !important; }
-[data-testid="stMetricValue"] { font-size: 20px !important; }
-[data-testid="stMetricLabel"] { font-size: 11px !important; }
-h2, h3 { font-size: 15px !important; }
-</style>""", unsafe_allow_html=True)
 
-content_col = get_chat_layout(page_context="전체 분석")
-# -- 이하 모든 콘텐츠를 content_col 안에 --
-with content_col:
+def render():
+    # ── CSS ──
+    st.markdown("""<style>
+    html, body, [data-testid="stAppViewContainer"] { font-size: 14px !important; }
+    [data-testid="stMetricValue"] { font-size: 20px !important; }
+    [data-testid="stMetricLabel"] { font-size: 11px !important; }
+    h2, h3 { font-size: 15px !important; }
+    </style>""", unsafe_allow_html=True)
 
     # ── 데이터 로드 ──
     try:
@@ -212,4 +209,3 @@ with content_col:
                 st.info("해당 월 데이터가 없습니다.")
         else:
             st.info("핫플 점수 데이터가 없습니다.")
-
