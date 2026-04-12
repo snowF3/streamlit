@@ -1,94 +1,121 @@
 """
-MiroFish Lite — 멀티라운드 시뮬레이터 (Snowflake 환경)
+MiroFish Lite v2 — 클러스터 분석가 시뮬레이터
+8개 클러스터 전문가 × N 라운드 = ~24 Cortex 호출로 118개 동네 예측
 """
 from __future__ import annotations
 
+import json
+import re
+
 from . import config
+from . import llm_client
 from .graph_builder import build_district_graph
 from .graph_query import GraphContextRetriever
-from .persona import PersonaPool, Persona
-from .agent import Agent, batch_decide
-from .memory import RoundMemory
-from .aggregator import RoundAggregator, PredictionOutput
 
 
-class MultiRoundSimulator:
+def run_simulation(
+    profiles: list[dict],
+    cluster_data: dict,
+    n_rounds: int = config.DEFAULT_N_ROUNDS,
+    progress_callback=None,
+) -> dict:
+    """
+    클러스터 분석가 시뮬레이션 실행
 
-    def __init__(self, n_rounds=config.DEFAULT_N_ROUNDS, n_agents=config.DEFAULT_N_AGENTS):
-        self.n_rounds = n_rounds
-        self.n_agents = n_agents
-        self.aggregator = RoundAggregator()
+    Returns: {
+        "rounds": [
+            {dc: {"visit_change_pct":..., "spending_change_pct":..., ...}, ...},  # 라운드1
+            {...},  # 라운드2
+            {...},  # 라운드3
+        ],
+        "n_rounds": int,
+        "n_districts": int,
+        "cluster_labels": list[str],
+    }
+    """
+    graph = build_district_graph(profiles, cluster_data)
+    ctx = GraphContextRetriever(graph)
+    cluster_groups = ctx.get_cluster_groups()
 
-    def run(
-        self,
-        profiles: list[dict],
-        personas: list[dict],
-        cluster_data: dict,
-        base_month: int = 202412,
-        district_codes: list[str] | None = None,
-        progress_callback=None,
-    ) -> PredictionOutput:
-        """
-        전체 시뮬레이션
+    total_steps = len(cluster_groups) * n_rounds
+    step = 0
+    all_rounds = []
+    prev_results = None
 
-        progress_callback: (round_num, total_rounds, message) → None
-            Streamlit progress bar 연결용
-        """
-        pool = PersonaPool(personas)
-        sampled = pool.sample_agents(n_agents=self.n_agents, district_codes=district_codes)
+    for rnd in range(1, n_rounds + 1):
+        round_predictions = {}
 
-        graph = build_district_graph(profiles, cluster_data)
-        ctx = GraphContextRetriever(graph)
-
-        agents = [Agent(persona=p, current_district=p.district_code) for p in sampled]
-
-        round_results = []
-        prev = None
-
-        for rnd in range(1, self.n_rounds + 1):
+        for cluster_label, district_codes in cluster_groups.items():
+            step += 1
             if progress_callback:
-                progress_callback(rnd, self.n_rounds, f"라운드 {rnd}/{self.n_rounds} 시뮬레이션 중...")
+                progress_callback(
+                    step, total_steps,
+                    f"라운드 {rnd}/{n_rounds} — {cluster_label} 분석 중 ({len(district_codes)}개 동네)..."
+                )
 
-            signals = self._calc_signals(prev)
+            # 프롬프트 조립
+            system = config.SYSTEM_PROMPT_ANALYST.format(cluster_label=cluster_label)
+            prompt = ctx.build_cluster_prompt(
+                cluster_label=cluster_label,
+                district_codes=district_codes,
+                round_num=rnd,
+                total_rounds=n_rounds,
+                prev_results=prev_results,
+            )
 
-            decisions = batch_decide(agents, rnd, self.n_rounds, ctx, signals)
+            # Cortex 호출
+            response = llm_client.cortex_complete(prompt, system=system)
 
-            # stay 결정에 현재 동네 보강
-            dc_map = {a.persona.persona_id: a.current_district for a in agents}
-            for d in decisions:
-                if d.action == config.ACTION_STAY and not d.target_district:
-                    d.target_district = dc_map.get(d.persona_id, "")
+            # JSON 파싱
+            parsed = _parse_predictions(response, district_codes)
+            round_predictions.update(parsed)
 
-            rr = self.aggregator.aggregate_round(decisions, rnd)
-            round_results.append(rr)
+        all_rounds.append(round_predictions)
+        prev_results = round_predictions
 
-            # 메모리 업데이트
-            dmap = {d.persona_id: d for d in decisions}
-            for agent in agents:
-                d = dmap.get(agent.persona.persona_id)
-                if d:
-                    agent.memory.record(RoundMemory(
-                        round_num=rnd, action=d.action,
-                        target_district=d.target_district,
-                        spending=d.monthly_spending,
-                        industry=d.preferred_industry,
-                        reasoning=d.reasoning,
-                        district_visit_delta=rr.net_migration.get(agent.current_district, 0),
-                    ))
+    return {
+        "rounds": all_rounds,
+        "n_rounds": n_rounds,
+        "n_districts": len(graph["districts"]),
+        "cluster_labels": list(cluster_groups.keys()),
+    }
 
-            prev = rr
 
-        return self.aggregator.compile_predictions(round_results, len(agents), base_month)
+def _parse_predictions(response: str, expected_dcs: list[str]) -> dict[str, dict]:
+    """LLM 응답에서 동네별 예측 JSON 파싱"""
+    result = {}
 
-    def _calc_signals(self, prev) -> dict[str, dict] | None:
-        if prev is None:
-            return None
-        signals = {}
-        for dc in set(prev.visits.keys()) | set(prev.spending.keys()):
-            v = prev.visits.get(dc, 0)
-            m = prev.net_migration.get(dc, 0)
-            signals[dc] = {
-                "visit_delta": min(max(m / max(v, 1) * 100, -50), 50),
-                "spending_delta": 0,
+    try:
+        # JSON 블록 추출
+        json_match = re.search(r'\{[\s\S]*"predictions"[\s\S]*\}', response)
+        if json_match:
+            data = json.loads(json_match.group())
+        else:
+            data = json.loads(response)
+
+        predictions = data.get("predictions", [])
+        for pred in predictions:
+            dc = pred.get("district_code", "")
+            if dc:
+                result[dc] = {
+                    "visit_change_pct": float(pred.get("visit_change_pct", 0)),
+                    "spending_change_pct": float(pred.get("spending_change_pct", 0)),
+                    "net_migration": float(pred.get("net_migration", 0)),
+                    "hot_industry": pred.get("hot_industry", ""),
+                    "declining_industry": pred.get("declining_industry", ""),
+                    "risk": pred.get("risk", ""),
+                    "signal": pred.get("signal", "안정"),
+                }
+    except (json.JSONDecodeError, ValueError, TypeError, AttributeError):
+        pass
+
+    # 파싱 실패한 동네는 기본값
+    for dc in expected_dcs:
+        if dc not in result:
+            result[dc] = {
+                "visit_change_pct": 0, "spending_change_pct": 0,
+                "net_migration": 0, "hot_industry": "", "declining_industry": "",
+                "risk": "예측 데이터 부족", "signal": "안정",
             }
-        return signals
+
+    return result
