@@ -155,26 +155,39 @@ def population_pyramid(pop_demo_df, title="인구 피라미드", pop_type="전�
 
 
 def realestate_trend_chart(re_df, title="매매/전세 시세 추이"):
-    """매매가/전세가 12년 라인 차트"""
+    """매매가/전세가 라인 차트"""
     if re_df.empty:
         return go.Figure().update_layout(title="데이터 없음")
 
-    df = re_df.sort_values("YYYYMMDD")
+    df = re_df.sort_values("YYYYMMDD").copy()
+    # YYYYMMDD를 문자열로 변환
+    df["date_str"] = df["YYYYMMDD"].astype(str).apply(
+        lambda x: f"{x[:4]}.{x[4:6]}" if len(str(x)) >= 6 else str(x)
+    )
+
     fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=df["YYYYMMDD"], y=df["MEME_PRICE_PER_SUPPLY_PYEONG"],
-        mode='lines', name='매매 평단가',
-        line=dict(color='#EF553B', width=2)
-    ))
-    fig.add_trace(go.Scatter(
-        x=df["YYYYMMDD"], y=df["JEONSE_PRICE_PER_SUPPLY_PYEONG"],
-        mode='lines', name='전세 평단가',
-        line=dict(color='#636EFA', width=2)
-    ))
+    if "MEME_PRICE_PER_SUPPLY_PYEONG" in df.columns:
+        meme = df[df["MEME_PRICE_PER_SUPPLY_PYEONG"].notna() & (df["MEME_PRICE_PER_SUPPLY_PYEONG"] > 0)]
+        if not meme.empty:
+            fig.add_trace(go.Scatter(
+                x=meme["date_str"], y=meme["MEME_PRICE_PER_SUPPLY_PYEONG"],
+                mode='lines', name='매매 평단가 (만원/평)',
+                line=dict(color='#EF553B', width=2)
+            ))
+    if "JEONSE_PRICE_PER_SUPPLY_PYEONG" in df.columns:
+        jeonse = df[df["JEONSE_PRICE_PER_SUPPLY_PYEONG"].notna() & (df["JEONSE_PRICE_PER_SUPPLY_PYEONG"] > 0)]
+        if not jeonse.empty:
+            fig.add_trace(go.Scatter(
+                x=jeonse["date_str"], y=jeonse["JEONSE_PRICE_PER_SUPPLY_PYEONG"],
+                mode='lines', name='전세 평단가 (만원/평)',
+                line=dict(color='#636EFA', width=2)
+            ))
+    if len(fig.data) == 0:
+        return go.Figure().update_layout(title=f"{title} — 데이터 없음")
+
     fig.update_layout(
-        title=title,
-        xaxis_title="날짜", yaxis_title="만원/평",
-        height=350
+        title=title, xaxis_title="", yaxis_title="만원/평",
+        height=300, legend=dict(orientation="h", y=-0.15),
     )
     return fig
 
@@ -195,14 +208,19 @@ def income_distribution_chart(income_row, title="소득 분포"):
     values = []
     for col, label in income_cols.items():
         if col in income_row.index and pd.notna(income_row[col]):
+            v = float(income_row[col])
             labels.append(label)
-            values.append(float(income_row[col]) * 100)
+            # 이미 비율(0~1)이면 *100, 이미 %면 그대로
+            values.append(v * 100 if v <= 1 else v)
 
     if not labels:
         return go.Figure().update_layout(title="데이터 없음")
 
-    fig = go.Figure(go.Bar(x=labels, y=values, marker_color='#636EFA'))
-    fig.update_layout(title=title, xaxis_title="소득 구간", yaxis_title="비율 (%)", height=300)
+    fig = go.Figure(go.Bar(x=labels, y=values, marker_color='#636EFA',
+                           text=[f"{v:.1f}%" for v in values], textposition="outside"))
+    fig.update_layout(title=title, xaxis_title="소득 구간 (연소득)",
+                      yaxis_title="비율 (%)", yaxis_range=[0, max(values)*1.3 if values else 100],
+                      height=300)
     return fig
 
 

@@ -443,6 +443,19 @@ def render():
             unsafe_allow_html=True,
         )
 
+        # 핫플 점수 도움말
+        with st.expander("핫플 점수란?"):
+            st.markdown(
+                '<div style="font-size:11px; line-height:1.6;">'
+                '<b>핫플 점수</b>는 5개 선행지표의 전월대비 변동률을 가중합하여 산출합니다.<br><br>'
+                '<b>공식</b>: 방문인구(25%) + 카페·식음료 매출(20%) + 유동인구(20%) + 매매가(20%) + 신규설치(15%)<br><br>'
+                '<b>누적 점수</b> = 100(기준) + 전체 월별 핫플 점수 합산<br>'
+                '100점 이상: 기준 대비 상승 추세 / 100점 이하: 하락 추세<br><br>'
+                '<b>연관 동네</b>: 같은 구(區) 내 동네 중 해당 월 변동이 큰 동네를 표시합니다.'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+
         # 왜 올랐을까?
         why_title = "왜 올랐을까?" if sig["direction"] == "up" else "왜 떨어졌을까?"
         with _container(border=True):
@@ -650,7 +663,7 @@ def render():
                         x=trend["label"], y=trend["cum_score"],
                         mode="lines", line=dict(color="#6366F1", width=2),
                         fill="tozeroy", fillcolor="rgba(99,102,241,0.08)",
-                        name="핫플 점수 추이",
+                        showlegend=False, name="",
                     ))
                     # 현재 월 포인트
                     curr_row = trend[trend["label"] == curr_label]
@@ -658,8 +671,7 @@ def render():
                         fig_trend.add_trace(go.Scatter(
                             x=[curr_label], y=[curr_row["cum_score"].values[0]],
                             mode="markers", marker=dict(size=10, color="#f04452"),
-                            name="현재 월",
-                            showlegend=False,
+                            showlegend=False, name="",
                         ))
                         fig_trend.add_vline(x=curr_label, line_dash="dot", line_color="rgba(240,68,82,0.3)")
                     fig_trend.update_layout(
@@ -733,7 +745,13 @@ def render():
                 if not income_d.empty and "AVERAGE_INCOME" in income_d.columns:
                     avg = income_d["AVERAGE_INCOME"].values[0]
                     if pd.notna(avg) and avg > 0:
-                        st.metric("평균소득", f"{avg/1e4:,.0f}만원")
+                        # 단위 자동 판별: 1억 이상이면 원 단위, 아니면 만원 단위
+                        if avg > 100000000:  # 1억 이상 → 원 단위
+                            st.metric("평균소득", f"{avg/1e4:,.0f}만원")
+                        elif avg > 10000:  # 1만 이상 → 만원 단위
+                            st.metric("평균소득", f"{avg:,.0f}만원")
+                        else:  # 작은 값 → 원래 단위 그대로
+                            st.metric("평균소득", f"{avg:,.0f}만원")
             with m_cols[2]:
                 if not income_d.empty and "total_customers" in income_d.columns:
                     cust = income_d["total_customers"].values[0]
@@ -759,9 +777,10 @@ def render():
                         fig_ct.add_trace(go.Bar(x=labels, y=ct_agg["FOOD_SALES"], name="식음료", marker_color="#EF553B"))
                     if "COFFEE_SALES" in ct_agg.columns:
                         fig_ct.add_trace(go.Bar(x=labels, y=ct_agg["COFFEE_SALES"], name="커피", marker_color="#00CC96"))
-                    fig_ct.update_layout(title="시간대별 카드매출 (전체/식음료/커피)", barmode="group", height=230,
+                    fig_ct.update_layout(title="시간대별 카드매출", barmode="group", height=230,
                                         margin=dict(l=25, r=10, t=30, b=25),
                                         yaxis_title="매출(원)", xaxis_title="시간대")
+                    st.caption("해당 동네의 시간대별 카드 결제 매출 분포 — 어떤 시간대에 소비가 활발한지 파악")
                     st.plotly_chart(fig_ct, use_container_width=True, key="my_sales_time")
             except Exception:
                 pass
@@ -774,6 +793,7 @@ def render():
                     fig = population_flow_chart(pt_d, f"{district} 시간대별 유동인구")
                     fig.update_layout(height=250)
                     st.plotly_chart(fig, use_container_width=True, key="my_pop_flow")
+                    st.caption("시간대별 거주·직장·방문 인구의 구성 변화 — 상권의 주요 활동 시간대 파악")
             except Exception:
                 st.info("데이터 없음")
             try:
