@@ -690,10 +690,15 @@ def render():
                     ))
                     if curr_label in trend["label"].values:
                         fig_trend.add_vline(x=curr_label, line_dash="dot", line_color="rgba(240,68,82,0.3)")
+                    y_min = trend["cum_score"].min()
+                    y_max = trend["cum_score"].max()
+                    y_pad = max((y_max - y_min) * 0.1, 5)
                     fig_trend.update_layout(
-                        height=130, margin=dict(l=0, r=0, t=5, b=5),
+                        height=150, margin=dict(l=5, r=5, t=5, b=5),
                         xaxis=dict(showgrid=False, tickfont=dict(size=7)),
-                        yaxis=dict(showgrid=False, showticklabels=True, tickfont=dict(size=7)),
+                        yaxis=dict(showgrid=True, showticklabels=True, tickfont=dict(size=8),
+                                   range=[y_min - y_pad, y_max + y_pad],
+                                   gridcolor="rgba(128,128,128,0.1)"),
                         hovermode="x unified", showlegend=False,
                     )
                     st.plotly_chart(fig_trend, use_container_width=True, key="my_trend")
@@ -788,16 +793,20 @@ def render():
                     labels = [TIME_SLOT_KOR.get(t, t) for t in ct_agg.index]
                     fig_ct = go.Figure()
                     if "TOTAL_SALES" in ct_agg.columns:
-                        fig_ct.add_trace(go.Bar(x=labels, y=ct_agg["TOTAL_SALES"], name="전체", marker_color="#636EFA"))
+                        fig_ct.add_trace(go.Bar(x=labels, y=ct_agg["TOTAL_SALES"], name="전체", marker_color="#636EFA", orientation="v"))
                     if "FOOD_SALES" in ct_agg.columns:
-                        fig_ct.add_trace(go.Bar(x=labels, y=ct_agg["FOOD_SALES"], name="식음료", marker_color="#EF553B"))
+                        fig_ct.add_trace(go.Bar(x=labels, y=ct_agg["FOOD_SALES"], name="식음료", marker_color="#EF553B", orientation="v"))
                     if "COFFEE_SALES" in ct_agg.columns:
-                        fig_ct.add_trace(go.Bar(x=labels, y=ct_agg["COFFEE_SALES"], name="커피", marker_color="#00CC96"))
-                    fig_ct.update_layout(title="시간대별 카드매출", barmode="group", height=230,
-                                        margin=dict(l=25, r=10, t=30, b=25),
-                                        yaxis_title="매출(원)", xaxis_title="시간대")
-                    st.caption("해당 동네의 시간대별 카드 결제 매출 분포 — 어떤 시간대에 소비가 활발한지 파악")
+                        fig_ct.add_trace(go.Bar(x=labels, y=ct_agg["COFFEE_SALES"], name="커피", marker_color="#00CC96", orientation="v"))
+                    fig_ct.update_layout(
+                        title="시간대별 카드매출", barmode="group", height=280,
+                        margin=dict(l=40, r=10, t=30, b=60),
+                        yaxis_title="매출(원)", xaxis_title="시간대",
+                        xaxis=dict(tickangle=-30),
+                        legend=dict(orientation="h", y=1.1),
+                    )
                     st.plotly_chart(fig_ct, use_container_width=True, key="my_sales_time")
+                    st.caption("시간대별 카드 결제 매출 — 소비가 활발한 시간대 파악")
             except Exception:
                 pass
 
