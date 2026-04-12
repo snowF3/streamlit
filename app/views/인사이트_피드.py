@@ -609,7 +609,6 @@ def render():
         ym_idx = all_months.index(latest_month) if latest_month in all_months else 0
         prev_month = all_months[ym_idx + 1] if ym_idx + 1 < len(all_months) else None
         st.caption(f"{city} {district} · {my_ym_label}")
-        st.caption("↑ 사이드바에서 '상권 분석'으로 이동")
 
         if not latest_month:
             st.stop()
@@ -678,8 +677,8 @@ def render():
 
                     fig_trend = go.Figure(go.Scatter(
                         x=trend["label"], y=trend["cum_score"],
-                        mode="lines", line=dict(color="#6366F1", width=2),
-                        fill="tozeroy", fillcolor="rgba(99,102,241,0.08)",
+                        mode="lines+markers", line=dict(color="#6366F1", width=2),
+                        marker=dict(size=3, color="#6366F1"),
                         showlegend=False, name="",
                     ))
                     # 현재 월 포인트
