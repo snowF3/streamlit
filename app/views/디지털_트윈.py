@@ -34,8 +34,7 @@ from profile_generator import (
 )
 from charts import TIME_SLOT_KOR, spending_radar_chart
 try:
-    from mirofish import run_prediction
-    from mirofish.report import generate_surge_text
+    from mirofish import run_prediction, generate_report
     MIROFISH_AVAILABLE = True
 except ImportError:
     MIROFISH_AVAILABLE = False
@@ -82,6 +81,18 @@ def render():
         return calc_derived_metrics(_pop_time, _card_agg, _pop_agg, _income_agg, year_month)
 
     derived = _calc_derived(pop_time, card_agg, pop_agg, income_agg, selected_month)
+
+    # ── 3개월 전망 카드 ──
+    try:
+        from views.인사이트_피드 import _render_forecast_cards
+        _render_forecast_cards(pop_agg, card_agg, region_master)
+    except Exception:
+        pass
+
+    with st.expander("ℹ️ 점수 산정 방식"):
+        st.markdown("최근 3개월 vs 이전 3개월의 **방문인구 변화율(60%)** + **카드매출 변화율(40%)**을 종합한 점수입니다. 인사이트 탭의 핫플 점수와 동일한 기준입니다.")
+
+    st.markdown("---")
 
     # 클러스터링 (캐싱)
     @st.cache_data(ttl=3600)
@@ -212,14 +223,19 @@ def render():
                 }
             for feat in geojson_data["features"]:
                 dc = feat["properties"]["district_code"]
-                info = cl_color_map.get(dc, {"fill_color": [128, 128, 128, 120], "metric_value": "미분류"})
+                info = cl_color_map.get(dc, {"fill_color": [80, 80, 80, 40], "metric_value": "데이터 없음"})
                 feat["properties"]["fill_color"] = info["fill_color"]
                 feat["properties"]["metric_value"] = info["metric_value"]
         else:
             norm_map = column_df.set_index("district_code")[["norm", "metric_value"]].to_dict("index")
             for feat in geojson_data["features"]:
                 dc = feat["properties"]["district_code"]
-                info = norm_map.get(dc, {"norm": 0, "metric_value": 0})
+                info = norm_map.get(dc, None)
+                if info is None:
+                    # 데이터 없는 법정동 → 비활성화 (투명 회색)
+                    feat["properties"]["metric_value"] = "데이터 없음"
+                    feat["properties"]["fill_color"] = [80, 80, 80, 40]
+                    continue
                 n = info["norm"]
                 feat["properties"]["metric_value"] = info["metric_value"]
                 r, g, b = 255, int(255 * (1 - n * 0.8)), int(255 * (1 - n))
@@ -278,6 +294,7 @@ def render():
                 hhi_val = dm['consumption_hhi']
                 hhi_label = "다양" if hhi_val < 0.05 else ("보통" if hhi_val < 0.15 else "편중")
                 st.metric("소비집중도(HHI)", f"{hhi_val:.3f} ({hhi_label})")
+                st.caption("HHI(허핀달-허쉬만 지수): 업종별 매출 집중도. 0에 가까울수록 다양한 소비, 1에 가까울수록 특정 업종 편중")
 
             # 클러스터 태그 표시
             if top_code in cluster_labels.index:
@@ -405,9 +422,10 @@ def render():
             ))
             fig_comp.update_layout(
                 barmode="group", height=450,
-                margin=dict(l=0, r=0, t=10, b=0),
+                margin=dict(l=50, r=10, t=10, b=80),
                 legend=dict(orientation="h", y=1.05),
-                xaxis=dict(tickangle=-45, tickfont=dict(size=9)),
+                xaxis=dict(title="동네", tickangle=-45, tickfont=dict(size=9)),
+                yaxis=dict(title="유동인구(명)", tickfont=dict(size=9)),
             )
             st.plotly_chart(fig_comp, use_container_width=True)
         else:
@@ -445,6 +463,7 @@ def render():
 
         with ins3:
             st.markdown("**🎯 소비특화 (HHI Top 5)**")
+            st.caption("HHI 높음 = 특정 업종에 매출 집중 (전문 상권)")
             if "consumption_hhi" in derived.columns:
                 top5_hhi = derived.nlargest(5, "consumption_hhi")[["consumption_hhi"]].copy()
                 top5_hhi.index = [name_map.get(dc, dc) for dc in top5_hhi.index]
@@ -453,7 +472,7 @@ def render():
 
     # ── 탭2: What-if 시뮬레이션 (Phase 2 고도화) ──
     with tab_sim:
-        st.markdown("**동네에 가게를 열면?** 유동인구 · 소득 · 경쟁 데이터 기반 예상 매출을 시뮬레이션합니다.")
+        st.markdown("**🧪 출점 시뮬레이션** — 동네를 선택하고, 업종과 조건을 설정하면 유동인구·소득·경쟁 데이터를 기반으로 예상 월매출을 계산합니다.")
 
         # 시뮬레이션 히스토리 초기화
         if "sim_history" not in st.session_state:
@@ -465,12 +484,15 @@ def render():
         district_codes = district_list["district_code"].tolist()
 
         with st.form("sim_form"):
-            sf1, sf2, sf3 = st.columns(3)
+            sf1, sf2 = st.columns(2)
             with sf1:
-                sim_district_label = st.selectbox("동네 선택", district_labels)
+                # 구/동 분리 선택
+                gu_list = sorted(set(n.split(" ")[0] for n in district_labels))
+                sim_gu = st.selectbox("구 선택", gu_list, key="sim_gu")
+                dong_in_gu = [n for n in district_labels if n.startswith(sim_gu)]
+                sim_district_label = st.selectbox("동 선택", dong_in_gu, key="sim_dong")
             with sf2:
                 sim_industry = st.selectbox("업종", list(INDUSTRY_PARAMS.keys()))
-            with sf3:
                 sim_rent = st.slider("예상 월 임대료(만원)", 100, 2000, 500, step=50)
             submitted = st.form_submit_button("🚀 시뮬레이션 실행", use_container_width=True)
 
@@ -571,6 +593,7 @@ def render():
             st.caption("⚠️ 통계 기반 추정치이며, 실제 매출과 차이가 있을 수 있습니다.")
 
             # ── 시뮬레이션 히스토리 비교 ──
+            st.info("💡 다른 동네나 업종으로 시뮬레이션을 여러 번 실행하면 자동으로 비교 테이블이 생성됩니다.")
             if len(st.session_state.sim_history) >= 2:
                 st.markdown("---")
                 st.markdown("##### 📊 시뮬레이션 비교")
@@ -641,10 +664,10 @@ def render():
                     values=job_dist.values.tolist(),
                     hole=0.4,
                     textinfo="label+percent",
-                    textposition="outside",
+                    textposition="inside",
                 ))
                 fig_job.update_layout(
-                    title="직업군 분포", height=300,
+                    title="직업군 분포", height=250,
                     margin=dict(l=20, r=20, t=40, b=10),
                     showlegend=False,
                 )
@@ -705,102 +728,96 @@ def render():
         else:
             st.info("이 동네의 소득/직업 상세 데이터가 없어 페르소나를 생성할 수 없습니다.")
 
-    # ── 탭4: AI 에이전트 예측 (MiroFish Lite) ──
+    # ── 탭4: AI 예측 (MiroFish Lite v2) ──
     with tab_ai:
         if not MIROFISH_AVAILABLE:
             st.warning("MiroFish 모듈을 로드할 수 없습니다.")
             st.stop()
 
         st.markdown(
-            "**MiroFish Lite** — AI 에이전트가 가상 페르소나로 미래 상권 변화를 시뮬레이션합니다."
+            "**MiroFish Lite v2** — 클러스터별 AI 분석가가 동네의 미래 상권 변화를 예측합니다."
         )
 
-        # 시뮬레이션 설정
-        ai_c1, ai_c2, ai_c3 = st.columns(3)
-        with ai_c1:
+        # ── 설정: 범위 + 기간 ──
+        _ai_c1, _ai_c2 = st.columns([2, 1])
+        with _ai_c2:
             ai_n_rounds = st.selectbox("예측 기간 (개월)", [2, 3, 4, 5], index=1, key="ai_rounds")
-        with ai_c2:
-            ai_n_agents = st.number_input("에이전트 수", min_value=10, max_value=500, value=100, step=10, key="ai_agents")
-        with ai_c3:
-            ai_scope = st.radio("범위", ["전체 동네", "선택 동네"], horizontal=True, key="ai_scope")
+        with _ai_c1:
+            ai_scope = st.radio("범위", ["전체 동네", "구 선택", "동 선택"], horizontal=True, key="ai_scope")
 
-        ai_target_dcs = None
-        if ai_scope == "선택 동네":
-            _district_opts = sorted(data_districts)
-            _district_labels = [name_map.get(dc, dc) for dc in _district_opts]
-            ai_sel = st.multiselect("동네 선택", options=_district_opts,
-                                     format_func=lambda dc: name_map.get(dc, dc),
-                                     max_selections=10, key="ai_districts")
-            ai_target_dcs = ai_sel if ai_sel else None
+        # ── 동네 선택 ──
+        _ai_target_dcs = None  # None이면 전체
+
+        # region_master에서 구/동 매핑 구성
+        _rm = region_master[region_master["district_code"].isin(data_districts)].copy()
+        _cities = sorted(_rm["city_kor"].unique())
+
+        if ai_scope == "구 선택":
+            _sel_cities = st.multiselect("구 선택", options=_cities, key="ai_city")
+            if _sel_cities:
+                _ai_target_dcs = _rm[_rm["city_kor"].isin(_sel_cities)]["district_code"].tolist()
+
+        elif ai_scope == "동 선택":
+            _sel_city_for_dong = st.selectbox("구 먼저 선택", options=_cities, key="ai_city_for_dong")
+            if _sel_city_for_dong:
+                _dongs_in_city = _rm[_rm["city_kor"] == _sel_city_for_dong].sort_values("district_kor")
+                _dong_options = _dongs_in_city["district_code"].tolist()
+                _dong_labels = {row["district_code"]: row["district_kor"] for _, row in _dongs_in_city.iterrows()}
+                _sel_dongs = st.multiselect(
+                    f"{_sel_city_for_dong} 동 선택",
+                    options=_dong_options,
+                    format_func=lambda dc: _dong_labels.get(dc, dc),
+                    key="ai_dong",
+                )
+                if _sel_dongs:
+                    _ai_target_dcs = _sel_dongs
+
+        # 선택 결과 표시
+        if _ai_target_dcs:
+            st.caption(f"선택된 동네: {len(_ai_target_dcs)}개")
+        elif ai_scope != "전체 동네":
+            st.caption("동네를 선택하세요.")
 
         if st.button("AI 예측 실행", type="primary", use_container_width=True, key="ai_run"):
-            with st.spinner("MiroFish 시뮬레이션 준비 중..."):
+            # 선택 동네 모드인데 선택 안 했으면 경고
+            if ai_scope != "전체 동네" and not _ai_target_dcs:
+                st.warning("동네를 선택하세요.")
+                st.stop()
+
+            with st.spinner("데이터 준비 중..."):
                 try:
-                    # 프로파일 생성
-                    _profiles = generate_all_profiles(
+                    _all_profiles = generate_all_profiles(
                         derived_metrics=derived, card_agg_df=card_agg,
                         pop_time_df=pop_time, income_agg_df=income_agg,
                         centroids_df=centroids, snapshot_month=int(selected_month),
                     )
 
-                    # 페르소나 생성 (income_detail → 실데이터, 실패 시 파생지표 합성)
-                    _personas = []
-                    _ym = int(selected_month)
-                    if not income_detail.empty:
-                        # year_month 타입 통일 (int)
-                        _id = income_detail.copy()
-                        _id["STANDARD_YEAR_MONTH"] = _id["STANDARD_YEAR_MONTH"].astype(int)
-                        _ia = income_agg.copy()
-                        _ia["STANDARD_YEAR_MONTH"] = _ia["STANDARD_YEAR_MONTH"].astype(int)
-                        for _dc in data_districts:
-                            try:
-                                _seeds = generate_persona_seeds(_id, _ia, _dc, _ym)
-                                _personas.extend(_seeds)
-                            except Exception:
-                                pass
-                    if not _personas:
-                        # fallback: derived_metrics 기반 합성 페르소나
-                        _archetypes = [
-                            ("M", "20대", "일반직장", "2~3천만"),
-                            ("F", "20대", "일반직장", "2~3천만"),
-                            ("M", "30대", "대기업", "4~5천만"),
-                            ("F", "30대", "전문직", "5~6천만"),
-                            ("M", "40대", "자영업", "5~6천만"),
-                            ("F", "40대", "일반직장", "4~5천만"),
-                            ("M", "50대", "기타", "3~4천만"),
-                        ]
-                        for _dc in data_districts:
-                            if _dc not in derived.index:
-                                continue
-                            _row = derived.loc[_dc]
-                            _pop = _row.get("total_pop", 1000)
-                            _inc = _row.get("avg_income", 40_000_000)
-                            for _g, _a, _j, _b in _archetypes:
-                                _personas.append({
-                                    "persona_id": f"{_dc}:{_g}_{_a}_{_j}",
-                                    "district_code": _dc, "gender": _g,
-                                    "age_group": _a, "job_type": _j,
-                                    "income_bracket": _b,
-                                    "weight": max(1, int(_pop / len(_archetypes))),
-                                    "avg_income": int(_inc),
-                                })
+                    # 선택된 동네만 필터링
+                    if _ai_target_dcs:
+                        _target_set = set(_ai_target_dcs)
+                        _profiles = [p for p in _all_profiles if p["district_code"] in _target_set]
+                    else:
+                        _profiles = _all_profiles
 
-                    # 클러스터 데이터
+                    # 대상 동네 기준으로 클러스터 데이터 구성
+                    _target_codes = {p["district_code"] for p in _profiles}
                     _sim_map = {}
                     if not feature_matrix.empty:
                         for _dc in feature_matrix.index:
-                            _sim_df = find_similar_districts(feature_matrix, _dc, top_n=5)
-                            _sim_map[_dc] = list(zip(
-                                _sim_df["district_code"].tolist(),
-                                [round(float(s), 3) for s in _sim_df["similarity"].tolist()],
-                            ))
+                            if _dc in _target_codes:
+                                _sim_df = find_similar_districts(feature_matrix, _dc, top_n=5)
+                                _sim_map[_dc] = list(zip(
+                                    _sim_df["district_code"].tolist(),
+                                    [round(float(s), 3) for s in _sim_df["similarity"].tolist()],
+                                ))
                     _dc_cluster = {}
                     if not cluster_labels.empty:
                         for _dc, _cid in cluster_labels.items():
-                            _dc_cluster[_dc] = {
-                                "cluster_id": int(_cid),
-                                "cluster_label": cluster_type_map.get(int(_cid), f"유형 {_cid}"),
-                            }
+                            if _dc in _target_codes:
+                                _dc_cluster[_dc] = {
+                                    "cluster_id": int(_cid),
+                                    "cluster_label": cluster_type_map.get(int(_cid), f"유형 {_cid}"),
+                                }
                     _cluster_data = {
                         "similar_map": _sim_map,
                         "district_cluster": _dc_cluster,
@@ -810,70 +827,78 @@ def render():
                     st.error(f"데이터 준비 실패: {e}")
                     st.stop()
 
-            # 시뮬레이션 실행
+            _n_clusters = len(cluster_type_map) if cluster_type_map else 1
+            _total_steps = _n_clusters * ai_n_rounds
             _prog = st.progress(0, text="시뮬레이션 시작...")
 
-            def _on_progress(rnd, total, msg):
-                _prog.progress(rnd / total, text=msg)
+            def _on_progress(step, total, msg):
+                _prog.progress(min(step / max(total, 1), 1.0), text=msg)
 
             try:
                 _result = run_prediction(
-                    profiles=_profiles, personas=_personas,
+                    profiles=_profiles,
                     cluster_data=_cluster_data,
-                    n_rounds=ai_n_rounds, n_agents=ai_n_agents,
-                    base_month=int(selected_month),
-                    district_codes=ai_target_dcs,
+                    n_rounds=ai_n_rounds,
                     progress_callback=_on_progress,
                 )
                 _prog.progress(1.0, text="완료!")
                 st.session_state["mirofish_result"] = _result
-                st.session_state["mirofish_profiles"] = _profiles
             except Exception as e:
                 _prog.empty()
                 st.error(f"시뮬레이션 실패: {e}")
 
         # ── 결과 표시 ──
         if "mirofish_result" in st.session_state:
-            _res = st.session_state["mirofish_result"]
-            _surge = _res["surge_predictions"]
-            _trends = _res["trend_report"]
-            _sim_out = _res["simulation_output"]
+            _out = st.session_state["mirofish_result"]["output"]
 
             st.markdown("---")
-            st.markdown(f"##### 시뮬레이션 결과 — {_sim_out.n_agents}명 에이전트, {_sim_out.n_rounds}개월 예측")
+            st.markdown(
+                f"##### 예측 결과 — {_out.n_districts}개 동네, {_out.n_rounds}개월, "
+                f"클러스터 {len(_out.cluster_labels)}개"
+            )
 
-            if _surge:
+            if _out.surge_rankings:
                 st.markdown("**급등 예측 순위**")
                 _rows = []
-                for _i, _sp in enumerate(_surge):
+                for _i, _d in enumerate(_out.surge_rankings[:15]):
                     _rows.append({
-                        "순위": _i + 1, "동네": _sp.name, "시그널": _sp.signal,
-                        "방문자": f"{_sp.visit_growth:+.1f}%",
-                        "매출": f"{_sp.spending_growth:+.1f}%",
-                        "인구이동": f"{_sp.net_migration:+.0f}명",
-                        "주력 업종": _sp.top_industry,
+                        "순위": _i + 1, "동네": _d["name"], "시그널": _d["signal"],
+                        "방문자": f"{_d['visit_growth']:+.1f}%",
+                        "매출": f"{_d['spending_growth']:+.1f}%",
+                        "인구이동": f"{_d['net_migration']:+.0f}명",
+                        "주력 업종": _d["hot_industry"],
+                        "리스크": _d["risk"],
                     })
                 st.dataframe(pd.DataFrame(_rows).set_index("순위"), use_container_width=True)
 
             _rc1, _rc2 = st.columns(2)
             with _rc1:
-                if _trends.industry_shifts:
+                if _out.industry_trends:
                     st.markdown("**업종별 수요 변화**")
-                    for _s in _trends.industry_shifts[:7]:
-                        _em = "+" if _s["growth"] > 0 else ""
-                        st.markdown(f"{'📈' if _s['growth'] > 0 else '📉'} {_s['industry']}: **{_em}{_s['growth']:.1f}%**")
+                    for _t in _out.industry_trends[:7]:
+                        _icon = "📈" if _t["net"] > 0 else ("📉" if _t["net"] < 0 else "➡️")
+                        st.markdown(
+                            f"{_icon} {_t['industry']}: **{_t['direction']}** "
+                            f"(상승 {_t['hot_count']} / 하락 {_t['decline_count']})"
+                        )
             with _rc2:
-                if _trends.population_flow:
+                if _out.population_flows:
                     st.markdown("**인구 이동**")
-                    for _f in _trends.population_flow[:7]:
-                        _em2 = "🟢" if _f["direction"] == "유입" else "🔴"
-                        st.markdown(f"{_em2} {_f['name']}: {_f['direction']} **{abs(_f['net_migration']):.0f}명**")
+                    for _f in _out.population_flows[:7]:
+                        _icon2 = "🟢" if _f["direction"] == "유입" else "🔴"
+                        st.markdown(f"{_icon2} {_f['name']}: {_f['direction']} **{abs(_f['net_migration']):.0f}명**")
+
+            if _out.decline_rankings:
+                st.markdown("---")
+                st.markdown("**주의 필요 동네**")
+                for _d in _out.decline_rankings[:5]:
+                    st.markdown(f"- {_d['name']} ({_d['signal']}): {_d['risk']}")
 
             st.markdown("---")
             if st.button("AI 분석 보고서 생성", key="ai_report"):
                 with st.spinner("Cortex AI가 보고서 작성 중..."):
                     try:
-                        _report = generate_surge_text(_surge, _trends, _sim_out)
+                        _report = generate_report(_out)
                         st.markdown(_report)
                     except Exception as e:
                         st.error(f"보고서 생성 실패: {e}")
