@@ -226,28 +226,34 @@ def _answer(q, hist_list, pctx="", sel_d=""):
     elif intent == "rental":
         data = f"[렌탈 트렌드]\n{_qrental()}\n\n[퍼널 전환율]\n{_qfunnel()}"
     elif intent == "forecast" and d:
-        data = f"[{d} 유동인구 12개월 추이]\n"
+        # 전체 추이 데이터 (60개월) → Cortex가 계절성+트렌드 분석
+        s = d.replace("'", "''")
+        data = f"[{d} 유동인구 전체 추이 (월별)]\n"
         try:
-            s = d.replace("'", "''")
             df = run_query(f"""
                 SELECT STANDARD_YEAR_MONTH,
+                       ROUND(SUM(RESIDENTIAL_POPULATION)) as RESIDENTIAL,
+                       ROUND(SUM(WORKING_POPULATION)) as WORKING,
+                       ROUND(SUM(VISITING_POPULATION)) as VISITING,
                        ROUND(SUM(RESIDENTIAL_POPULATION + WORKING_POPULATION + VISITING_POPULATION)) as TOTAL_POP
                 FROM {SPH}.FLOATING_POPULATION_INFO f
                 JOIN {SPH}.M_SCCO_MST m ON f.DISTRICT_CODE = m.DISTRICT_CODE
                 WHERE m.DISTRICT_KOR_NAME LIKE '%{s}%'
-                GROUP BY 1 ORDER BY 1 DESC LIMIT 12
+                GROUP BY 1 ORDER BY 1
             """)
             data += df.to_string(index=False)
         except: pass
-        data += f"\n\n[{d} 카드매출 12개월 추이]\n"
+        data += f"\n\n[{d} 카드매출 전체 추이]\n"
         try:
             df2 = run_query(f"""
                 SELECT STANDARD_YEAR_MONTH,
-                       ROUND(SUM(TOTAL_SALES)) as TOTAL_SALES
+                       ROUND(SUM(TOTAL_SALES)) as TOTAL_SALES,
+                       ROUND(SUM(COFFEE_SALES)) as COFFEE_SALES,
+                       ROUND(SUM(FOOD_SALES)) as FOOD_SALES
                 FROM {SPH}.CARD_SALES_INFO c
                 JOIN {SPH}.M_SCCO_MST m ON c.DISTRICT_CODE = m.DISTRICT_CODE
                 WHERE m.DISTRICT_KOR_NAME LIKE '%{s}%' AND c.CARD_TYPE = '1'
-                GROUP BY 1 ORDER BY 1 DESC LIMIT 12
+                GROUP BY 1 ORDER BY 1
             """)
             data += df2.to_string(index=False)
         except: pass
@@ -308,6 +314,7 @@ def _answer(q, hist_list, pctx="", sel_d=""):
 - 인구는 천 단위 구분 (예: 45935 → 45,935명)
 - 데이터에 없으면 "추정"이라고 명시
 - 절대 되묻지 마세요
+- 예측 요청 시: 트렌드 분석 + 계절성 패턴 + 향후 3개월 예측값(표) + 근거 + 리스크
 - 한국어로 답변
 
 [답변 형식 — 반드시 지켜주세요]
