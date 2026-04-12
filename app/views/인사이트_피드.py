@@ -631,8 +631,8 @@ def render():
 
         with tab_summary:
             # 프로파일 점수 — 누적 계산 (100 + 전월들 합산)
-            my_hp_all = hp[(hp["DISTRICT_CODE"] == dc) & (hp["STANDARD_YEAR_MONTH"] <= latest_month)].sort_values("STANDARD_YEAR_MONTH")
-            my_hp_curr = hp[(hp["DISTRICT_CODE"] == dc) & (hp["STANDARD_YEAR_MONTH"] == latest_month)]
+            my_hp_all = hp[(hp["DISTRICT_CODE"] == dc) & (hp["STANDARD_YEAR_MONTH"] <= latest_month)].drop_duplicates(subset="STANDARD_YEAR_MONTH").sort_values("STANDARD_YEAR_MONTH")
+            my_hp_curr = hp[(hp["DISTRICT_CODE"] == dc) & (hp["STANDARD_YEAR_MONTH"] == latest_month)].drop_duplicates(subset="STANDARD_YEAR_MONTH")
             my_sig = [_hp_to_signal(row) for _, row in my_hp_curr.iterrows()] if not my_hp_curr.empty else []
 
             if my_sig:
@@ -668,7 +668,7 @@ def render():
 
                 # 점수 추이 미니 차트
                 # 전체 기간 추이 (x축 고정)
-                all_hp_dc = hp[hp["DISTRICT_CODE"] == dc].sort_values("STANDARD_YEAR_MONTH")
+                all_hp_dc = hp[(hp["DISTRICT_CODE"] == dc) & (hp["STANDARD_YEAR_MONTH"] <= latest_month)].drop_duplicates(subset="STANDARD_YEAR_MONTH").sort_values("STANDARD_YEAR_MONTH")
                 if len(all_hp_dc) > 1:
                     trend = all_hp_dc.copy()
                     trend["cum_score"] = 100 + trend["hotplace_score"].cumsum()
