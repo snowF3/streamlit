@@ -34,7 +34,6 @@ from profile_generator import (
 from charts import TIME_SLOT_KOR, spending_radar_chart
 from chat_ui import render_sidebar_chat
 
-st.set_page_config(page_title="디지털 트윈", page_icon="🏙️", layout="wide")
 st.title("🏙️ 디지털 트윈")
 st.caption("서울 법정동 시간대별 도시 흐름 시뮬레이션 · 데이터 범위: 중구 · 영등포구 · 서초구")
 
