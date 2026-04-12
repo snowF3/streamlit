@@ -633,23 +633,27 @@ def render():
         )
 
         with tab_summary:
-            # 프로파일 점수 — 누적 계산 (100 + 전월들 합산)
-            my_hp_all = hp[(hp["DISTRICT_CODE"] == dc) & (hp["STANDARD_YEAR_MONTH"] <= latest_month)].drop_duplicates(subset="STANDARD_YEAR_MONTH").sort_values("STANDARD_YEAR_MONTH")
-            my_hp_curr = hp[(hp["DISTRICT_CODE"] == dc) & (hp["STANDARD_YEAR_MONTH"] == latest_month)].drop_duplicates(subset="STANDARD_YEAR_MONTH")
+            # 프로파일 점수 — 누적 계산
+            # 하나의 데이터프레임으로 통일 (텍스트 + 차트 모두 사용)
+            _hp_dc = hp[(hp["DISTRICT_CODE"] == dc)].drop_duplicates(subset="STANDARD_YEAR_MONTH").sort_values("STANDARD_YEAR_MONTH").copy()
+            _hp_dc["cum_score"] = 100 + _hp_dc["hotplace_score"].cumsum()
+
+            my_hp_until = _hp_dc[_hp_dc["STANDARD_YEAR_MONTH"] <= latest_month]
+            my_hp_curr = _hp_dc[_hp_dc["STANDARD_YEAR_MONTH"] == latest_month]
             my_sig = [_hp_to_signal(row) for _, row in my_hp_curr.iterrows()] if not my_hp_curr.empty else []
 
             if my_sig:
                 ls = my_sig[0]
-                cumulative_score = round(100 + my_hp_all["hotplace_score"].sum(), 1)
-                prev_score = round(cumulative_score - ls["composite"], 1)
+                cumulative_score = round(my_hp_until["cum_score"].iloc[-1], 1) if not my_hp_until.empty else 100
                 month_chg = ls["composite"]
+                prev_score = round(cumulative_score - month_chg, 1)
                 score_color = "#f04452" if month_chg > 0 else "#3182f6"
                 score_prefix = "+" if month_chg > 0 else ""
 
                 # 순위 계산
-                month_all = hp[hp["STANDARD_YEAR_MONTH"] == latest_month].copy()
+                month_all = hp[hp["STANDARD_YEAR_MONTH"] == latest_month].drop_duplicates(subset="DISTRICT_CODE").copy()
                 month_all["cum"] = month_all["DISTRICT_CODE"].apply(
-                    lambda d: 100 + hp[(hp["DISTRICT_CODE"] == d) & (hp["STANDARD_YEAR_MONTH"] <= latest_month)]["hotplace_score"].sum()
+                    lambda d: hp[(hp["DISTRICT_CODE"] == d)].drop_duplicates(subset="STANDARD_YEAR_MONTH").sort_values("STANDARD_YEAR_MONTH").pipe(lambda df: 100 + df[df["STANDARD_YEAR_MONTH"] <= latest_month]["hotplace_score"].sum())
                 )
                 rank = int((month_all["cum"] > cumulative_score).sum() + 1)
                 total_districts = len(month_all)
@@ -669,12 +673,9 @@ def render():
                     unsafe_allow_html=True,
                 )
 
-                # 점수 추이 미니 차트
-                # 전체 기간 추이 (x축 고정)
-                all_hp_dc = hp[(hp["DISTRICT_CODE"] == dc) & (hp["STANDARD_YEAR_MONTH"] <= latest_month)].drop_duplicates(subset="STANDARD_YEAR_MONTH").sort_values("STANDARD_YEAR_MONTH")
-                if len(all_hp_dc) > 1:
-                    trend = all_hp_dc.copy()
-                    trend["cum_score"] = 100 + trend["hotplace_score"].cumsum()
+                # 점수 추이 미니 차트 (같은 _hp_dc 사용)
+                if len(my_hp_until) > 1:
+                    trend = my_hp_until.copy()
                     trend["label"] = trend["STANDARD_YEAR_MONTH"].astype(str).apply(lambda x: f"{x[2:4]}.{x[4:6]}")
                     curr_label = f"{str(latest_month)[2:4]}.{str(latest_month)[4:6]}"
 
