@@ -43,8 +43,8 @@ except ImportError:
 
 def render():
 
-    st.title("🏙️ 디지털 트윈")
-    st.caption("서울 법정동 시간대별 도시 흐름 시뮬레이션 · 데이터 범위: 중구 · 영등포구 · 서초구")
+    st.markdown('<span style="font-size:18px; font-weight:800;">🔮 미래 예측</span>', unsafe_allow_html=True)
+    st.caption("상권 시뮬레이션 · AI 예측 · 페르소나 분석 · 데이터 범위: 중구 · 영등포구 · 서초구")
 
     # ══════════════════════════════════════
     # 데이터 로드
@@ -417,9 +417,9 @@ def render():
     # [D] 하단 탭
     # ══════════════════════════════════════
     st.divider()
-    tab_insight, tab_sim, tab_persona, tab_ai = st.tabs([
-        "📈 현황 인사이트", "🧪 What-if 시뮬레이션",
-        "👤 페르소나", "🤖 AI 예측"
+    tab_insight, tab_sim, tab_persona, tab_ai, tab_cortex = st.tabs([
+        "📈 현황 인사이트", "🧪 출점 시뮬레이션",
+        "👤 페르소나", "🤖 AI 예측", "🔮 Cortex 전망"
     ])
 
     # ── 탭1: 현황 인사이트 ──
@@ -878,3 +878,78 @@ def render():
                     except Exception as e:
                         st.error(f"보고서 생성 실패: {e}")
 
+
+    # ── 탭5: Cortex 전망 (신규) ──
+    with tab_cortex:
+        st.markdown("**🔮 Cortex AI 3개월 상권 전망**")
+        st.caption("60개월 유동인구·매출 추이를 Cortex AI가 분석하여 향후 3개월을 예측합니다.")
+
+        # 동네 선택
+        cortex_district = st.selectbox(
+            "분석할 동네", district_options, index=0, key="cortex_district"
+        )
+
+        if st.button("🔮 전망 분석 시작", key="cortex_start", use_container_width=True):
+            cortex_dc = rm[rm["label"] == cortex_district].iloc[0]["district_code"]
+
+            with st.spinner("Cortex AI가 60개월 데이터를 분석 중..."):
+                try:
+                    from chat_ui import _cortex
+                    from data_loader import run_query, SPH
+
+                    # 유동인구 추이
+                    pop_ts = run_query(f"""
+                        SELECT STANDARD_YEAR_MONTH as MONTH,
+                               ROUND(SUM(RESIDENTIAL_POPULATION)) as RESIDENTIAL,
+                               ROUND(SUM(WORKING_POPULATION)) as WORKING,
+                               ROUND(SUM(VISITING_POPULATION)) as VISITING,
+                               ROUND(SUM(RESIDENTIAL_POPULATION + WORKING_POPULATION + VISITING_POPULATION)) as TOTAL
+                        FROM {SPH}.FLOATING_POPULATION_INFO
+                        WHERE DISTRICT_CODE = '{cortex_dc}'
+                        GROUP BY 1 ORDER BY 1
+                    """)
+
+                    # 카드매출 추이
+                    sales_ts = run_query(f"""
+                        SELECT STANDARD_YEAR_MONTH as MONTH,
+                               ROUND(SUM(TOTAL_SALES)) as TOTAL_SALES,
+                               ROUND(SUM(COFFEE_SALES)) as COFFEE,
+                               ROUND(SUM(FOOD_SALES)) as FOOD
+                        FROM {SPH}.CARD_SALES_INFO
+                        WHERE DISTRICT_CODE = '{cortex_dc}' AND CARD_TYPE = '1'
+                        GROUP BY 1 ORDER BY 1
+                    """)
+
+                    prompt = f"""{cortex_district}의 상권 데이터입니다.
+
+[유동인구 월별 추이 ({len(pop_ts)}개월)]
+{pop_ts.to_string(index=False)}
+
+[카드매출 월별 추이 ({len(sales_ts)}개월)]
+{sales_ts.to_string(index=False)}
+
+위 데이터를 분석하여 다음을 제공하세요:
+
+### 트렌드 분석
+- 상승/하락/정체 판단
+
+### 계절성 패턴
+- 월별 반복 패턴
+
+### 향후 3개월 예측
+| 월 | 예상 유동인구 | 예상 매출 | 근거 |
+|---|---|---|---|
+
+### 출점 추천
+- 이 동네에 가게를 연다면 적합한 업종과 이유
+
+### 리스크
+- 주의해야 할 요인
+
+간결하게 표 위주로 답변하세요. 한국어."""
+
+                    result = _cortex(prompt)
+                    st.markdown(result)
+
+                except Exception as e:
+                    st.error(f"Cortex 전망 오류: {e}")
