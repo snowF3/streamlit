@@ -5,7 +5,7 @@ import streamlit as st
 import json, re
 from data_loader import run_query, SPH, RICHGO, AJD
 
-CORTEX_MODEL = "openai-gpt-5-mini"
+CORTEX_MODEL = "openai-gpt-5.4"
 
 
 def _safe_rerun():
@@ -23,19 +23,67 @@ def _cortex(prompt):
 
 
 def _classify(q, h=""):
-    p = f"""Classify this question. Return JSON only.
-Previous: {h[:200]}
-Question: {q}
-{{"intent":"lookup|compare|trend|simulate|recommend|hotplace|marketing|rental|forecast|realestate","district":"district_name|null","category":"business_type|null"}}"""
+    """2단계 분류: 키워드 매칭(0초) → 실패 시 LLM 폴백"""
+
+    # ── 1단계: 키워드 매칭 (즉시) ──
+    intent = None
+
+    if any(w in q for w in ["출점", "차리", "열면", "오픈", "창업", "시뮬", "매출 예상", "상권 분석"]):
+        intent = "simulate"
+    elif any(w in q for w in ["비교", "vs", "차이", "어디가 더", "둘 중"]):
+        intent = "compare"
+    elif any(w in q for w in ["핫플", "뜨는", "Top", "인기", "순위", "랭킹"]):
+        intent = "hotplace"
+    elif any(w in q for w in ["예측", "전망", "미래", "앞으로", "3개월"]):
+        intent = "forecast"
+    elif any(w in q for w in ["추이", "변화", "최근", "트렌드", "월별"]):
+        intent = "trend"
+    elif any(w in q for w in ["마케팅", "채널", "ROI", "광고", "유입"]):
+        intent = "marketing"
+    elif any(w in q for w in ["렌탈", "정수기", "가전", "에어컨"]):
+        intent = "rental"
+    elif any(w in q for w in ["부동산", "매매", "전세", "시세", "집값"]):
+        intent = "realestate"
+    elif any(w in q for w in ["추천", "뭘 팔", "업종", "유망", "어떤 사업"]):
+        intent = "recommend"
+    elif any(w in q for w in ["화면", "보이는", "요약", "지금 보고"]):
+        intent = "screen"
+
+    # 동네명 추출 (정규식)
+    district = None
+    d_match = re.findall(r'(\w{1,4}[동가])\b', q)
+    if d_match:
+        district = d_match[0]
+
+    # 업종 추출
+    category = None
+    for cat in ["카페", "음식점", "미용실", "편의점", "의류", "병원", "약국", "학원"]:
+        if cat in q:
+            category = cat
+            break
+
+    # 키워드로 intent 잡혔으면 바로 반환
+    if intent:
+        return {"intent": intent, "district": district, "category": category}
+
+    # ── 2단계: LLM 폴백 (키워드 미매칭 시만) ──
+    p = f"""질문을 분류. JSON만.
+이전:{h[:200]}
+질문:{q}
+{{"intent":"lookup|simulate|compare|trend|forecast|recommend|hotplace|marketing|rental|realestate|screen","district":"동명|null","category":"업종|null"}}"""
     resp = _cortex(p)
     try:
         m = re.search(r'\{.*\}', resp, re.DOTALL)
-        if m: return json.loads(m.group())
+        if m:
+            result = json.loads(m.group())
+            # LLM 결과에 키워드로 찾은 district/category 보충
+            if not result.get("district") and district:
+                result["district"] = district
+            if not result.get("category") and category:
+                result["category"] = category
+            return result
     except: pass
-    return {"intent": "lookup", "district": None, "category": None}
-
-
-# intent에 marketing, rental, forecast 추가
+    return {"intent": "lookup", "district": district, "category": category}
 
 
 def _qpop(d):
@@ -218,7 +266,7 @@ def _answer(q, hist_list, pctx="", sel_d=""):
             parts.append(f"=== {x} ===\n[유동인구]\n{_qpop(x)}\n[카드매출]\n{_qsales(x)}")
         data = "\n\n".join(parts) if parts else "비교 대상 없음"
     elif intent == "simulate" and d:
-        data = f"[유동인구]\n{_qpop(d)}\n\n[카드매출]\n{_qsales(d)}\n\n[소득]\n{_qincome(d)}"
+        data = f"[{d} 유동인구]\n{_qpop(d)}\n\n[{d} 카드매출 (업종별)]\n{_qsales(d)}\n\n[{d} 소득/자산]\n{_qincome(d)}\n\n[{d} 부동산 시세]\n{_qrealestate(d)}"
     elif intent == "recommend":
         data = (f"[카드매출]\n{_qsales(d)}\n\n[소득]\n{_qincome(d)}\n\n[렌탈 트렌드]\n{_qrental()}") if d else f"[핫플]\n{_qhot(5)}\n\n[렌탈 트렌드]\n{_qrental()}"
     elif intent == "marketing":
@@ -274,10 +322,13 @@ def _answer(q, hist_list, pctx="", sel_d=""):
             data = f"[{d} 12개월 추이]\n{df.to_string(index=False)}"
         except Exception as e:
             data = f"추이 조회 오류: {e}"
+    elif intent == "screen":
+        data = f"[현재 화면 정보]\n{pctx}" if pctx else "현재 화면 정보가 전달되지 않았습니다."
     elif d:
-        data = f"[유동인구]\n{_qpop(d)}\n\n[카드매출]\n{_qsales(d)}\n\n[소득]\n{_qincome(d)}"
+        data = f"[{d} 유동인구]\n{_qpop(d)}\n\n[{d} 카드매출]\n{_qsales(d)}\n\n[{d} 소득]\n{_qincome(d)}"
     else:
-        data = "지역명을 특정할 수 없습니다."
+        # district 없으면 핫플 랭킹이라도 제공
+        data = f"[전체 핫플 랭킹]\n{_qhot(5)}\n\n[현재 화면]\n{pctx}" if pctx else f"[전체 핫플 랭킹]\n{_qhot(5)}"
 
     ctx = f"[현재 화면] {pctx}" if pctx else ""
 
