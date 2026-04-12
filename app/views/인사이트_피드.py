@@ -859,20 +859,22 @@ def render():
         with tab_rental:
             # 영유아/여성 비율
             try:
-                from data_loader import load_richgo_fertility, load_ajd_new_install, AJD
+                from data_loader import load_richgo_fertility, AJD
                 fertility = load_richgo_fertility()
                 ft = fertility[fertility["SGG"] == city]
                 if not ft.empty and "AGE_UNDER5_PER_FEMALE_20TO40" in ft.columns:
                     avg_ratio = ft["AGE_UNDER5_PER_FEMALE_20TO40"].mean()
                     st.metric("영유아/가임여성 비율", f"{avg_ratio:.3f}")
                     if avg_ratio > 0.15:
-                        st.caption("💡 영유아 비율 높음 → 정수기/공기청정기 렌탈 수요 높을 가능성")
+                        st.caption("영유아 비율 높음 — 정수기/공기청정기 렌탈 수요 높을 가능성")
                     elif avg_ratio < 0.08:
-                        st.caption("💡 영유아 비율 낮음 → 1인/2인 가구 중심")
+                        st.caption("영유아 비율 낮음 — 1인/2인 가구 중심")
                 else:
-                    st.caption("영유아 데이터: 중구·영등포구·서초구만 제공")
+                    st.caption("영유아 데이터: 중구, 영등포구, 서초구만 제공")
             except Exception:
                 pass
+
+            st.markdown("---")
 
             # 렌탈 트렌드
             try:
@@ -880,39 +882,48 @@ def render():
                     SELECT RENTAL_SUB_CATEGORY as ITEM,
                            SUM(CONTRACT_COUNT) as CONTRACTS
                     FROM {AJD}.V06_RENTAL_CATEGORY_TRENDS
-                    WHERE INSTALL_STATE LIKE '%서울%'
-                      AND YEAR_MONTH = (SELECT MAX(YEAR_MONTH) FROM {AJD}.V06_RENTAL_CATEGORY_TRENDS)
+                    WHERE YEAR_MONTH = (SELECT MAX(YEAR_MONTH) FROM {AJD}.V06_RENTAL_CATEGORY_TRENDS)
                     GROUP BY 1 ORDER BY CONTRACTS DESC LIMIT 5
                 """)
                 if not rental.empty:
-                    st.markdown("**서울 인기 렌탈 Top 5**")
+                    st.markdown("**전국 인기 렌탈 Top 5**")
                     for _, row in rental.iterrows():
                         st.markdown(f"- {row['ITEM']}: {int(row['CONTRACTS']):,}건")
                 else:
-                    st.caption("렌탈 데이터 없음")
-            except Exception:
-                st.caption("렌탈 데이터 로드 오류")
+                    st.caption("렌탈 데이터 조회 결과 없음")
+            except Exception as e:
+                st.caption(f"렌탈 데이터 오류: {e}")
+
+            st.markdown("---")
 
             # 인터넷 신규설치 추이
             try:
+                # INSTALL_CITY에서 구 이름 매칭 (서초구, 중구, 영등포구)
+                city_short = city.replace("구", "")  # "서초" 로도 매칭 시도
                 install = run_query(f"""
                     SELECT YEAR_MONTH, SUM(OPEN_COUNT) as INSTALLS
                     FROM {AJD}.V05_REGIONAL_NEW_INSTALL
-                    WHERE INSTALL_STATE LIKE '%서울%' AND INSTALL_CITY LIKE '%{city}%'
-                    GROUP BY 1 ORDER BY 1 DESC LIMIT 6
+                    WHERE (INSTALL_CITY LIKE '%{city}%' OR INSTALL_CITY LIKE '%{city_short}%')
+                    GROUP BY 1 ORDER BY 1 DESC LIMIT 12
                 """)
                 if not install.empty:
                     install_sorted = install.sort_values("YEAR_MONTH")
                     fig_inst = go.Figure(go.Scatter(
                         x=install_sorted["YEAR_MONTH"].astype(str),
-                        y=install_sorted["INSTALLS"],
+                        y=install_sorted["INSTALLS"].tolist(),
                         mode='lines+markers', line=dict(color='#6366F1', width=2),
                         fill='tozeroy', fillcolor='rgba(99,102,241,0.1)',
-                        name='신규설치'
+                        name='신규설치',
+                        hovertemplate='%{x}<br>설치: %{y:,.0f}건<extra></extra>',
                     ))
-                    fig_inst.update_layout(title=f"{city} 인터넷 신규설치 추이", height=220,
-                                           yaxis_title="건수")
+                    fig_inst.update_layout(
+                        title=f"{city} 인터넷 신규설치 추이",
+                        height=250, yaxis_title="건수",
+                        xaxis=dict(type="category", dtick=2),
+                    )
                     st.plotly_chart(fig_inst, use_container_width=True, key="my_install")
-            except Exception:
-                st.caption("인터넷 설치 데이터 오류")
+                else:
+                    st.caption(f"{city} 신규설치 데이터 없음")
+            except Exception as e:
+                st.caption(f"인터넷 설치 데이터 오류: {e}")
 
