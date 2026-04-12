@@ -13,7 +13,30 @@
       "Bash(where gh:*)",
       "Bash(git ls-tree:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(xargs grep:*)",
+      "Bash(find /d/park/streamlit/app -name \"*.py\" -exec wc -l {} +)",
+      "Bash(git fetch:*)",
+      "Bash(git merge:*)",
+      "Bash(git checkout:*)",
+      "Bash(git rm:*)",
+      "Bash(git add:*)",
+      "Bash(python -c \"import ast; tree = ast.parse\\(open\\('scoring.py'\\).read\\(\\)\\); [print\\(node.name, node.lineno\\) for node in ast.walk\\(tree\\) if isinstance\\(node, ast.FunctionDef\\)]\")",
+      "Bash(python -c \"import ast; tree = ast.parse\\(open\\('scoring.py', encoding='utf-8'\\).read\\(\\)\\); [print\\(node.name, node.lineno\\) for node in ast.walk\\(tree\\) if isinstance\\(node, ast.FunctionDef\\)]\")",
+      "Bash(python -c \"import py_compile; py_compile.compile\\('views/디지털_트윈.py', doraise=True\\); print\\('OK'\\)\")",
+      "Bash(python -c \"import py_compile; py_compile.compile\\('scoring.py', doraise=True\\); print\\('OK'\\)\")",
+      "Bash(python -c ':*)",
+      "Bash(python -c \"import ast; [ast.parse\\(open\\(f'app/mirofish/{f}', encoding='utf-8'\\).read\\(\\)\\) for f in ['config.py', 'llm_client.py', 'persona.py', 'memory.py', 'graph_builder.py', 'graph_query.py', 'agent.py', 'aggregator.py', 'predictor.py', 'report.py', 'engine_adapter.py', 'run.py', 'data_bridge.py']]; print\\('All files parse OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('app/simulation.py', encoding='utf-8'\\).read\\(\\)\\); print\\('simulation.py parse OK'\\)\")",
+      "Bash(ls -lh /d/park/streamlit/app/mirofish/*.py)",
+      "Bash(pip list:*)",
+      "Bash(pip install:*)",
+      "Bash(python mirofish/export_standalone.py --output ../mirofish_data)",
+      "Bash(env)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('app/views/디지털_트윈.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(git pull:*)",
+      "Bash(git stash:*)"
     ]
   }
 }

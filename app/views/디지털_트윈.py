@@ -71,16 +71,13 @@ def render():
     data_districts = set(pop_agg["DISTRICT_CODE"].unique())
     centroids = centroids[centroids["district_code"].isin(data_districts)].copy()
 
-    # 기준 년월
+    # 기준 년월 (컨트롤 바에서 선택, 여기서는 목록만 준비)
     all_months = sorted(pop_agg["STANDARD_YEAR_MONTH"].unique(), reverse=True)
-    selected_month = all_months[0]
 
-    # 파생지표 계산 (캐싱)
+    # 파생지표 계산 함수 (캐싱) — 컨트롤 바에서 기준 년월 선택 후 호출
     @st.cache_data(ttl=3600)
     def _calc_derived(_pop_time, _card_agg, _pop_agg, _income_agg, year_month):
         return calc_derived_metrics(_pop_time, _card_agg, _pop_agg, _income_agg, year_month)
-
-    derived = _calc_derived(pop_time, card_agg, pop_agg, income_agg, selected_month)
 
     # ── 3개월 전망 카드 ──
     try:
@@ -89,25 +86,32 @@ def render():
     except Exception:
         pass
 
-    with st.expander("ℹ️ 점수 산정 방식"):
-        st.markdown("최근 3개월 vs 이전 3개월의 **방문인구 변화율(60%)** + **카드매출 변화율(40%)**을 종합한 점수입니다. 인사이트 탭의 핫플 점수와 동일한 기준입니다.")
+    with st.expander("❓ 3개월 전망 점수 안내", expanded=False):
+        st.markdown("""
+**점수 산정 공식**
+> `전망 점수 = 방문인구 변화율 × 60% + 카드매출 변화율 × 40%`
+
+| 지표 | 가중치 | 데이터 소스 |
+|---|---|---|
+| 방문인구 변화율 | 60% | SPH 유동인구 (`VISITING_POPULATION`) |
+| 카드매출 변화율 | 40% | SPH 카드매출 (`TOTAL_SALES`) |
+
+- **비교 기간**: 최근 3개월 평균 vs 이전 3개월 평균
+- **분류 기준**: +3점 이상 → 🔥 상승 / ±3점 이내 → ⚡ 관찰 / -3점 이하 → 📉 하락
+
+> ⚠️ **인사이트 탭의 핫플 점수와는 다른 간소화 지표입니다.**
+> 핫플 점수는 5개 지표(방문인구 25% + 카페매출 20% + 유동인구 20% + 매매가 20% + 신규설치 15%)를 사용합니다.
+""")
 
     st.markdown("---")
 
-    # 클러스터링 (캐싱)
+    # 클러스터링 함수 (캐싱) — 컨트롤 바에서 기준 년월 선택 후 호출
     @st.cache_data(ttl=3600)
     def _compute_clusters(_pop_time, _card_agg, _pop_demo, _derived, _year_month):
         fm = build_feature_matrix(_derived, _card_agg, _pop_demo, _pop_time, _year_month)
         labels, model, scaler = run_clustering(fm)
         type_map = classify_district_type(fm, labels)
         return fm, labels, type_map
-
-    try:
-        feature_matrix, cluster_labels, cluster_type_map = _compute_clusters(
-            pop_time, card_agg, pop_demo, derived, selected_month
-        )
-    except Exception:
-        feature_matrix, cluster_labels, cluster_type_map = pd.DataFrame(), pd.Series(dtype=int), {}
 
     # 이름 매핑 (전역)
     name_map = centroids.set_index("district_code")["name"].to_dict()
@@ -118,7 +122,14 @@ def render():
     time_slots = list(TIME_SLOT_KOR.keys())
     time_labels = list(TIME_SLOT_KOR.values())
 
-    ctrl1, ctrl2, ctrl3 = st.columns([2, 1, 1])
+    ctrl0, ctrl1, ctrl2, ctrl3 = st.columns([1, 2, 1, 1])
+    with ctrl0:
+        _month_fmt = {m: f"{str(m)[:4]}.{str(m)[4:]}" for m in all_months}
+        selected_month = st.selectbox(
+            "기준 년월", all_months,
+            format_func=lambda m: _month_fmt[m],
+            index=0, key="twin_month_sel",
+        )
     with ctrl1:
         selected_time_label = st.select_slider(
             "시간대", options=time_labels, value="점심(12~15)")
@@ -129,6 +140,16 @@ def render():
     with ctrl3:
         metric_options = ["총유동인구", "방문인구", "1인당매출", "낮밤인구비", "클러스터"]
         selected_metric = st.selectbox("지표 선택", metric_options)
+
+    # ── 파생지표 & 클러스터링 계산 (기준 년월에 따라) ──
+    derived = _calc_derived(pop_time, card_agg, pop_agg, income_agg, selected_month)
+
+    try:
+        feature_matrix, cluster_labels, cluster_type_map = _compute_clusters(
+            pop_time, card_agg, pop_demo, derived, selected_month
+        )
+    except Exception:
+        feature_matrix, cluster_labels, cluster_type_map = pd.DataFrame(), pd.Series(dtype=int), {}
 
     # ══════════════════════════════════════
     # 시간대별 데이터 필터링 (캐싱)
@@ -214,6 +235,8 @@ def render():
         st.subheader(f"서울 법정동 — {selected_metric} ({selected_time_label}, {weekday_label})")
 
         geojson_data = load_geojson()
+        active_dc_set = set(data_districts)
+
         if sel_col == "cluster":
             cl_color_map = {}
             for _, row in column_df.iterrows():
@@ -221,45 +244,105 @@ def render():
                     "fill_color": row["fill_color"],
                     "metric_value": row["metric_value"],
                 }
+            active_features = []
             for feat in geojson_data["features"]:
                 dc = feat["properties"]["district_code"]
-                info = cl_color_map.get(dc, {"fill_color": [80, 80, 80, 40], "metric_value": "데이터 없음"})
+                if dc not in active_dc_set:
+                    continue  # 비활성 법정동 제거
+                info = cl_color_map.get(dc, {"fill_color": [128, 128, 128, 160], "metric_value": "데이터 없음"})
                 feat["properties"]["fill_color"] = info["fill_color"]
                 feat["properties"]["metric_value"] = info["metric_value"]
+                active_features.append(feat)
         else:
             norm_map = column_df.set_index("district_code")[["norm", "metric_value"]].to_dict("index")
+            active_features = []
             for feat in geojson_data["features"]:
                 dc = feat["properties"]["district_code"]
+                if dc not in active_dc_set:
+                    continue  # 비활성 법정동 제거
                 info = norm_map.get(dc, None)
                 if info is None:
-                    # 데이터 없는 법정동 → 비활성화 (투명 회색)
-                    feat["properties"]["metric_value"] = "데이터 없음"
-                    feat["properties"]["fill_color"] = [80, 80, 80, 40]
-                    continue
+                    continue  # 데이터 없는 법정동도 제거
                 n = info["norm"]
                 feat["properties"]["metric_value"] = info["metric_value"]
                 r, g, b = 255, int(255 * (1 - n * 0.8)), int(255 * (1 - n))
                 a = int(120 + n * 100)
                 feat["properties"]["fill_color"] = [r, g, b, a]
+                active_features.append(feat)
+
+        geojson_data["features"] = active_features
+
+        # 활성 법정동 bounds 계산 → ViewState 자동 맞춤
+        _all_lons, _all_lats = [], []
+        for feat in active_features:
+            coords = feat["geometry"].get("coordinates", [])
+            gtype = feat["geometry"]["type"]
+            if gtype == "MultiPolygon":
+                for poly in coords:
+                    if poly:
+                        for pt in poly[0]:
+                            _all_lons.append(pt[0])
+                            _all_lats.append(pt[1])
+            elif gtype == "Polygon":
+                if coords:
+                    for pt in coords[0]:
+                        _all_lons.append(pt[0])
+                        _all_lats.append(pt[1])
+
+        if _all_lons and _all_lats:
+            _center_lat = (min(_all_lats) + max(_all_lats)) / 2
+            _center_lon = (min(_all_lons) + max(_all_lons)) / 2
+            # 범위에 따라 줌 레벨 자동 계산
+            _lat_range = max(_all_lats) - min(_all_lats)
+            _lon_range = max(_all_lons) - min(_all_lons)
+            _max_range = max(_lat_range, _lon_range)
+            if _max_range > 0.3:
+                _auto_zoom = 10.5
+            elif _max_range > 0.15:
+                _auto_zoom = 11.5
+            elif _max_range > 0.05:
+                _auto_zoom = 12.5
+            else:
+                _auto_zoom = 13.5
+        else:
+            _center_lat, _center_lon, _auto_zoom = 37.51, 126.95, 11.5
 
         layer = pdk.Layer(
             "GeoJsonLayer",
             data=geojson_data,
             get_fill_color="properties.fill_color",
-            get_line_color=[80, 80, 80, 160],
+            get_line_color=[60, 60, 60, 200],
             line_width_min_pixels=1,
             pickable=True,
             auto_highlight=True,
+            highlight_color=[255, 200, 0, 120],
             stroked=True,
         )
         view = pdk.ViewState(
-            latitude=37.51, longitude=126.95, zoom=11.5,
-            pitch=0, bearing=0,
+            latitude=_center_lat,
+            longitude=_center_lon,
+            zoom=_auto_zoom,
+            min_zoom=max(_auto_zoom - 2, 9),
+            max_zoom=min(_auto_zoom + 3, 16),
+            pitch=0,
+            bearing=0,
         )
         deck = pdk.Deck(
             layers=[layer],
             initial_view_state=view,
-            tooltip={"text": "{name}\n" + f"{selected_metric}: " + "{metric_value}"},
+            tooltip={
+                "html": '<div style="padding:6px 10px;font-family:sans-serif;">' +
+                        '<div style="font-size:13px;font-weight:700;margin-bottom:3px;">{name}</div>' +
+                        '<div style="font-size:12px;color:#555;">' + f'{selected_metric}: ' + '<b>{metric_value}</b></div>' +
+                        '</div>',
+                "style": {
+                    "backgroundColor": "white",
+                    "color": "#333",
+                    "borderRadius": "8px",
+                    "boxShadow": "0 2px 8px rgba(0,0,0,0.15)",
+                    "border": "1px solid #e0e0e0",
+                },
+            },
             map_provider="carto",
             map_style="light",
         )
@@ -315,31 +398,45 @@ def render():
                 & (pop_time["DISTRICT_CODE"] == top_code)
             ].copy()
             if not dc_time_all.empty:
-                dc_time_all["total"] = (dc_time_all["RESIDENTIAL_POPULATION"]
-                                        + dc_time_all["WORKING_POPULATION"]
-                                        + dc_time_all["VISITING_POPULATION"])
-                dc_chart = dc_time_all.set_index("TIME_SLOT").reindex(time_slots)
+                # 시간대별 집계 (중복 행 방지)
+                dc_agg = dc_time_all.groupby("TIME_SLOT")[
+                    ["RESIDENTIAL_POPULATION", "WORKING_POPULATION", "VISITING_POPULATION"]
+                ].sum()
+                dc_chart = dc_agg.reindex(time_slots).fillna(0)
                 dc_chart["시간대"] = [TIME_SLOT_KOR.get(t, t) for t in dc_chart.index]
+                dc_chart["total"] = (dc_chart["RESIDENTIAL_POPULATION"]
+                                     + dc_chart["WORKING_POPULATION"]
+                                     + dc_chart["VISITING_POPULATION"])
+
                 fig_mini = go.Figure()
                 fig_mini.add_trace(go.Scatter(
                     x=dc_chart["시간대"], y=dc_chart["RESIDENTIAL_POPULATION"],
-                    name="거주", fill="tozeroy", line=dict(width=1),
+                    name="거주", stackgroup="one",
+                    line=dict(width=0.5, color="#6366F1"),
+                    fillcolor="rgba(99,102,241,0.3)",
                 ))
                 fig_mini.add_trace(go.Scatter(
                     x=dc_chart["시간대"], y=dc_chart["WORKING_POPULATION"],
-                    name="직장", fill="tonexty", line=dict(width=1),
+                    name="직장", stackgroup="one",
+                    line=dict(width=0.5, color="#22D3EE"),
+                    fillcolor="rgba(34,211,238,0.3)",
                 ))
                 fig_mini.add_trace(go.Scatter(
                     x=dc_chart["시간대"], y=dc_chart["VISITING_POPULATION"],
-                    name="방문", fill="tonexty", line=dict(width=1),
+                    name="방문", stackgroup="one",
+                    line=dict(width=0.5, color="#F43F5E"),
+                    fillcolor="rgba(244,63,94,0.3)",
                 ))
                 fig_mini.update_layout(
                     height=200, margin=dict(l=0, r=0, t=20, b=0),
                     showlegend=True, legend=dict(orientation="h", y=-0.3),
                     xaxis=dict(tickfont=dict(size=9)),
-                    yaxis=dict(tickfont=dict(size=9)),
+                    yaxis=dict(tickfont=dict(size=9), tickformat=","),
                 )
                 st.plotly_chart(fig_mini, use_container_width=True)
+                st.caption(f"📊 데이터: {len(dc_time_all)}행 → {len(dc_chart)}시간대, 합계: {dc_chart['total'].sum():,.0f}명")
+            else:
+                st.caption("⚠️ 해당 월·요일의 시간대별 데이터가 없습니다.")
 
         elif sel_col == "cluster" and not column_df.empty:
             # 클러스터 모드: 각 클러스터별 동네 수 표시
