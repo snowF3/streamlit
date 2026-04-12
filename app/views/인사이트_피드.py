@@ -532,16 +532,18 @@ def render():
 
         st.divider()
 
-        # 연관 동네 (같은 구 내 동네)
+        # 연관 동네 (같은 구 전체 — hp에서 직접 조회)
         st.markdown('<div style="font-size:13px; font-weight:800; margin-bottom:2px;">연관 동네</div>', unsafe_allow_html=True)
         st.markdown('<span style="font-size:10px; opacity:0.35;">같은 구 내 동네</span>', unsafe_allow_html=True)
-        same_city = [s for s in signals if s["city"] == sig["city"] and s["dc"] != sig["dc"]]
-        if same_city:
-            for ri, rel in enumerate(same_city[:5]):
+        sig_city = sig["city"]
+        same_city_hp = hp[(hp["city"] == sig_city) & (hp["STANDARD_YEAR_MONTH"] == sig["month"]) & (hp["DISTRICT_CODE"] != sig["dc"])].sort_values("hotplace_score", ascending=False)
+        if not same_city_hp.empty:
+            for _, rel_row in same_city_hp.head(5).iterrows():
+                rel = _hp_to_signal(rel_row)
                 rc = "#f04452" if rel["direction"] == "up" else "#3182f6"
                 rp = "+" if rel["direction"] == "up" else ""
                 rk = rel["keywords"][0] if rel["keywords"] else ""
-                rel_hp_all = hp[(hp["DISTRICT_CODE"] == rel["dc"]) & (hp["STANDARD_YEAR_MONTH"] <= rel["month"])]
+                rel_hp_all = hp[(hp["DISTRICT_CODE"] == rel["dc"]) & (hp["STANDARD_YEAR_MONTH"] <= rel["month"])].drop_duplicates(subset="STANDARD_YEAR_MONTH")
                 rel_curr = round(100 + rel_hp_all["hotplace_score"].sum(), 1)
                 st.markdown(
                     f'<div style="font-size:11px; padding:4px 0; border-bottom:1px solid rgba(128,128,128,0.06);">'
@@ -553,7 +555,7 @@ def render():
                     unsafe_allow_html=True,
                 )
         else:
-            st.caption("같은 구의 다른 시그널이 없습니다.")
+            st.caption("같은 구의 다른 동네 데이터가 없습니다.")
 
         # ── 내 동네 근처 시그널 ──
         st.divider()
