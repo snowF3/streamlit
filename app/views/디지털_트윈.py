@@ -32,7 +32,7 @@ from profile_generator import (
     generate_persona_seeds, generate_persona_text, get_persona_summary,
 )
 from charts import TIME_SLOT_KOR, spending_radar_chart
-from chat_ui import render_chat_panel
+from chat_ui import render_sidebar_chat
 
 st.set_page_config(page_title="디지털 트윈", page_icon="🏙️", layout="wide")
 st.title("🏙️ 디지털 트윈")
@@ -711,17 +711,4 @@ with tab_ai:
 # ══════════════════════════════════════
 # [E] AI 채팅
 # ══════════════════════════════════════
-_top3 = column_df.nlargest(3, sel_col if sel_col != "cluster" else "district_code")["name"].tolist()
-_top3_names = ", ".join(_top3)
-month_label = f"{str(selected_month)[:4]}년 {str(selected_month)[4:6]}월"
-page_context = (
-    f"디지털 트윈 - 시간대: {selected_time_label}, "
-    f"{weekday_label}, 지표: {selected_metric}, "
-    f"기준: {month_label}, 상위 동네: {_top3_names}"
-)
-render_chat_panel(
-    current_tab="디지털 트윈",
-    selected_district=None,
-    selected_month=selected_month,
-    page_context=page_context,
-)
+render_sidebar_chat()
