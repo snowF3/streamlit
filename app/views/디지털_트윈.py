@@ -853,7 +853,7 @@ def render():
                         "인구이동": f"{_sp.net_migration:+.0f}명",
                         "주력 업종": _sp.top_industry,
                     })
-                st.dataframe(pd.DataFrame(_rows), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(_rows).set_index("순위"), use_container_width=True)
 
             _rc1, _rc2 = st.columns(2)
             with _rc1:
