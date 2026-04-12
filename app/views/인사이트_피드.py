@@ -84,7 +84,7 @@ def _render_forecast_cards(pop_agg, card_agg, region_master, show_title=True):
     c1, c2, c3 = st.columns(3)
 
     with c1:
-        st.markdown("** 상승 예측**")
+        st.markdown("**상승 예측**")
         for _, row in rising.iterrows():
             st.markdown(f"""<div style="background:rgba(239,68,68,0.1);padding:8px 12px;border-radius:8px;
                 margin:4px 0;border-left:3px solid #EF4444;">
@@ -170,7 +170,7 @@ def _render_forecast_cards(pop_agg, card_agg, region_master, show_title=True):
             except Exception as e:
                 st.error(f"AI 예측 오류: {e}")
         else:
-            st.caption(f"🔮 **{top_name}** 을 선택하고 예측 실행 버튼을 눌러주세요.")
+            st.caption(f"**{top_name}** 을 선택하고 예측 실행 버튼을 눌러주세요.")
     else:
         st.caption("상승 예측 동네가 없어 AI 심층 예측을 건너뜁니다.")
 

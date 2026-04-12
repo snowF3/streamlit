@@ -479,7 +479,7 @@ def render():
     # [D] 하단 탭
     # ══════════════════════════════════════
     st.divider()
-    tab_insight, tab_sim, tab_persona, tab_ai, tab_cortex = st.tabs([
+    tab_insight, tab_sim, tab_persona, tab_ai = st.tabs([
         " 현황 인사이트", " what-if",
         " 페르소나", " AI 예측"
     ])
