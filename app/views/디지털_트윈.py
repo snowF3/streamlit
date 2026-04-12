@@ -1072,11 +1072,11 @@ def render():
 
         # 동네 선택
         cortex_district = st.selectbox(
-            "분석할 동네", district_options, index=0, key="cortex_district"
+            "분석할 동네", district_labels, index=0, key="cortex_district"
         )
 
         if st.button("🔮 전망 분석 시작", key="cortex_start", use_container_width=True):
-            cortex_dc = rm[rm["label"] == cortex_district].iloc[0]["district_code"]
+            cortex_dc = district_codes[district_labels.index(cortex_district)]
 
             with st.spinner("Cortex AI가 60개월 데이터를 분석 중..."):
                 try:
