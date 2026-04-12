@@ -27,8 +27,8 @@ from chat_ui import render_sidebar_chat
 render_sidebar_chat()
 
 # ── 상단 탭 네비게이션 ──
-tab_feed, tab_analysis, tab_profile, tab_twin, tab_compare = st.tabs([
-    "🏠 인사이트", "📊 전체 분석", "🔍 동네 프로파일", "🌆 디지털 트윈", "⚖️ 동네 비교"
+tab_feed, tab_analysis, tab_profile, tab_marketing, tab_twin, tab_compare = st.tabs([
+    "🏠 인사이트", "📊 전체 분석", "🔍 동네 프로파일", "📢 마케팅", "🌆 디지털 트윈", "⚖️ 동네 비교"
 ])
 
 with tab_feed:
@@ -51,6 +51,13 @@ with tab_profile:
         render()
     except Exception as e:
         st.error(f"동네 프로파일 로드 오류: {e}")
+
+with tab_marketing:
+    try:
+        from views.마케팅 import render as render_marketing
+        render_marketing()
+    except Exception as e:
+        st.error(f"마케팅 로드 오류: {e}")
 
 with tab_twin:
     try:
