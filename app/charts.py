@@ -203,9 +203,9 @@ def realestate_trend_chart(re_df, title="매매/전세 시세 추이"):
         title=title,
         xaxis=dict(title="", type="category", tickangle=-45, dtick=12),
         yaxis=dict(title="만원/평"),
-        height=300,
-        legend=dict(orientation="h", y=-0.55, x=0.5, xanchor="center"),
-        margin=dict(b=120),
+        height=350,
+        legend=dict(orientation="h", y=-0.75, x=0.5, xanchor="center"),
+        margin=dict(b=160),
         hovermode="x unified",
     )
     return fig
