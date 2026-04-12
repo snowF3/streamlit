@@ -23,31 +23,67 @@ def _cortex(prompt):
 
 
 def _classify(q, h=""):
-    p = f"""아래 질문을 분류하세요. JSON만 반환.
+    """2단계 분류: 키워드 매칭(0초) → 실패 시 LLM 폴백"""
 
-이전 대화: {h[:300]}
-질문: {q}
+    # ── 1단계: 키워드 매칭 (즉시) ──
+    intent = None
 
-intent 설명:
-- simulate: 출점, 카페/음식점 차리기, 상권 분석, 매출 시뮬레이션, "~하면 어떨까"
-- lookup: 특정 동네 유동인구/매출/소득 조회
-- compare: 2개 이상 동네 비교 ("A vs B", "A와 B")
-- trend: 추이, 변화, 최근 몇 개월
-- forecast: 미래 예측, 전망, "3개월 후"
-- recommend: 업종 추천, "뭘 팔면", "어떤 업종"
-- hotplace: 핫플, 뜨는 동네, Top 5
-- marketing: 마케팅 채널, ROI, 광고
-- rental: 렌탈 트렌드, 정수기
-- realestate: 부동산, 매매가, 전세
-- screen: 현재 화면 요약, "지금 보이는 거", "이 화면"
+    if any(w in q for w in ["출점", "차리", "열면", "오픈", "창업", "시뮬", "매출 예상", "상권 분석"]):
+        intent = "simulate"
+    elif any(w in q for w in ["비교", "vs", "차이", "어디가 더", "둘 중"]):
+        intent = "compare"
+    elif any(w in q for w in ["핫플", "뜨는", "Top", "인기", "순위", "랭킹"]):
+        intent = "hotplace"
+    elif any(w in q for w in ["예측", "전망", "미래", "앞으로", "3개월"]):
+        intent = "forecast"
+    elif any(w in q for w in ["추이", "변화", "최근", "트렌드", "월별"]):
+        intent = "trend"
+    elif any(w in q for w in ["마케팅", "채널", "ROI", "광고", "유입"]):
+        intent = "marketing"
+    elif any(w in q for w in ["렌탈", "정수기", "가전", "에어컨"]):
+        intent = "rental"
+    elif any(w in q for w in ["부동산", "매매", "전세", "시세", "집값"]):
+        intent = "realestate"
+    elif any(w in q for w in ["추천", "뭘 팔", "업종", "유망", "어떤 사업"]):
+        intent = "recommend"
+    elif any(w in q for w in ["화면", "보이는", "요약", "지금 보고"]):
+        intent = "screen"
 
-{{"intent":"...", "district":"법정동명 또는 null", "category":"업종 또는 null"}}"""
+    # 동네명 추출 (정규식)
+    district = None
+    d_match = re.findall(r'(\w{1,4}[동가])\b', q)
+    if d_match:
+        district = d_match[0]
+
+    # 업종 추출
+    category = None
+    for cat in ["카페", "음식점", "미용실", "편의점", "의류", "병원", "약국", "학원"]:
+        if cat in q:
+            category = cat
+            break
+
+    # 키워드로 intent 잡혔으면 바로 반환
+    if intent:
+        return {"intent": intent, "district": district, "category": category}
+
+    # ── 2단계: LLM 폴백 (키워드 미매칭 시만) ──
+    p = f"""질문을 분류. JSON만.
+이전:{h[:200]}
+질문:{q}
+{{"intent":"lookup|simulate|compare|trend|forecast|recommend|hotplace|marketing|rental|realestate|screen","district":"동명|null","category":"업종|null"}}"""
     resp = _cortex(p)
     try:
         m = re.search(r'\{.*\}', resp, re.DOTALL)
-        if m: return json.loads(m.group())
+        if m:
+            result = json.loads(m.group())
+            # LLM 결과에 키워드로 찾은 district/category 보충
+            if not result.get("district") and district:
+                result["district"] = district
+            if not result.get("category") and category:
+                result["category"] = category
+            return result
     except: pass
-    return {"intent": "lookup", "district": None, "category": None}
+    return {"intent": "lookup", "district": district, "category": category}
 
 
 def _qpop(d):
