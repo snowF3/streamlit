@@ -652,6 +652,7 @@ def render():
                         x=trend["label"], y=trend["cum_score"],
                         mode="lines", line=dict(color="#6366F1", width=2),
                         fill="tozeroy", fillcolor="rgba(99,102,241,0.08)",
+                        showlegend=False, name="",
                     ))
                     # 현재 월 포인트
                     curr_row = trend[trend["label"] == curr_label]
@@ -659,7 +660,7 @@ def render():
                         fig_trend.add_trace(go.Scatter(
                             x=[curr_label], y=[curr_row["cum_score"].values[0]],
                             mode="markers", marker=dict(size=10, color="#f04452"),
-                            showlegend=False,
+                            showlegend=False, name="",
                         ))
                         fig_trend.add_vline(x=curr_label, line_dash="dot", line_color="rgba(240,68,82,0.3)")
                     fig_trend.update_layout(
