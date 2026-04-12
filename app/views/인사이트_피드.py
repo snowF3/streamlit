@@ -675,20 +675,17 @@ def render():
                     trend["label"] = trend["STANDARD_YEAR_MONTH"].astype(str).apply(lambda x: f"{x[2:4]}.{x[4:6]}")
                     curr_label = f"{str(latest_month)[2:4]}.{str(latest_month)[4:6]}"
 
+                    # 현재 월만 빨간 마커, 나머지 보라색
+                    marker_colors = ["#f04452" if lb == curr_label else "#6366F1" for lb in trend["label"]]
+                    marker_sizes = [10 if lb == curr_label else 3 for lb in trend["label"]]
+
                     fig_trend = go.Figure(go.Scatter(
                         x=trend["label"], y=trend["cum_score"],
                         mode="lines+markers", line=dict(color="#6366F1", width=2),
-                        marker=dict(size=3, color="#6366F1"),
+                        marker=dict(size=marker_sizes, color=marker_colors),
                         showlegend=False, name="",
                     ))
-                    # 현재 월 포인트
-                    curr_row = trend[trend["label"] == curr_label]
-                    if not curr_row.empty:
-                        fig_trend.add_trace(go.Scatter(
-                            x=[curr_label], y=[curr_row["cum_score"].values[0]],
-                            mode="markers", marker=dict(size=10, color="#f04452"),
-                            showlegend=False, name="",
-                        ))
+                    if curr_label in trend["label"].values:
                         fig_trend.add_vline(x=curr_label, line_dash="dot", line_color="rgba(240,68,82,0.3)")
                     fig_trend.update_layout(
                         height=130, margin=dict(l=0, r=0, t=5, b=5),
