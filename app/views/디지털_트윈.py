@@ -223,14 +223,19 @@ def render():
                 }
             for feat in geojson_data["features"]:
                 dc = feat["properties"]["district_code"]
-                info = cl_color_map.get(dc, {"fill_color": [128, 128, 128, 120], "metric_value": "미분류"})
+                info = cl_color_map.get(dc, {"fill_color": [80, 80, 80, 40], "metric_value": "데이터 없음"})
                 feat["properties"]["fill_color"] = info["fill_color"]
                 feat["properties"]["metric_value"] = info["metric_value"]
         else:
             norm_map = column_df.set_index("district_code")[["norm", "metric_value"]].to_dict("index")
             for feat in geojson_data["features"]:
                 dc = feat["properties"]["district_code"]
-                info = norm_map.get(dc, {"norm": 0, "metric_value": 0})
+                info = norm_map.get(dc, None)
+                if info is None:
+                    # 데이터 없는 법정동 → 비활성화 (투명 회색)
+                    feat["properties"]["metric_value"] = "데이터 없음"
+                    feat["properties"]["fill_color"] = [80, 80, 80, 40]
+                    continue
                 n = info["norm"]
                 feat["properties"]["metric_value"] = info["metric_value"]
                 r, g, b = 255, int(255 * (1 - n * 0.8)), int(255 * (1 - n))
@@ -417,9 +422,10 @@ def render():
             ))
             fig_comp.update_layout(
                 barmode="group", height=450,
-                margin=dict(l=0, r=0, t=10, b=0),
+                margin=dict(l=50, r=10, t=10, b=80),
                 legend=dict(orientation="h", y=1.05),
-                xaxis=dict(tickangle=-45, tickfont=dict(size=9)),
+                xaxis=dict(title="동네", tickangle=-45, tickfont=dict(size=9)),
+                yaxis=dict(title="유동인구(명)", tickfont=dict(size=9)),
             )
             st.plotly_chart(fig_comp, use_container_width=True)
         else:
@@ -478,12 +484,15 @@ def render():
         district_codes = district_list["district_code"].tolist()
 
         with st.form("sim_form"):
-            sf1, sf2, sf3 = st.columns(3)
+            sf1, sf2 = st.columns(2)
             with sf1:
-                sim_district_label = st.selectbox("동네 선택", district_labels)
+                # 구/동 분리 선택
+                gu_list = sorted(set(n.split(" ")[0] for n in district_labels))
+                sim_gu = st.selectbox("구 선택", gu_list, key="sim_gu")
+                dong_in_gu = [n for n in district_labels if n.startswith(sim_gu)]
+                sim_district_label = st.selectbox("동 선택", dong_in_gu, key="sim_dong")
             with sf2:
                 sim_industry = st.selectbox("업종", list(INDUSTRY_PARAMS.keys()))
-            with sf3:
                 sim_rent = st.slider("예상 월 임대료(만원)", 100, 2000, 500, step=50)
             submitted = st.form_submit_button("🚀 시뮬레이션 실행", use_container_width=True)
 
