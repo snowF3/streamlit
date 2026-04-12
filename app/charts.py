@@ -88,19 +88,22 @@ def population_flow_chart(pop_time_df, title="시간대별 유동인구"):
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(
-        x=labels, y=agg["RESIDENTIAL_POPULATION"],
+        x=labels, y=agg["RESIDENTIAL_POPULATION"].tolist(),
         mode='lines', stackgroup='one', name='거주인구',
-        line=dict(color='#636EFA'), fillcolor='rgba(99, 110, 250, 0.4)'
+        line=dict(color='#636EFA'), fillcolor='rgba(99, 110, 250, 0.4)',
+        hovertemplate='%{x}<br>거주: %{y:,.0f}명<extra></extra>',
     ))
     fig.add_trace(go.Scatter(
-        x=labels, y=agg["WORKING_POPULATION"],
+        x=labels, y=agg["WORKING_POPULATION"].tolist(),
         mode='lines', stackgroup='one', name='직장인구',
-        line=dict(color='#EF553B'), fillcolor='rgba(239, 85, 59, 0.4)'
+        line=dict(color='#EF553B'), fillcolor='rgba(239, 85, 59, 0.4)',
+        hovertemplate='%{x}<br>직장: %{y:,.0f}명<extra></extra>',
     ))
     fig.add_trace(go.Scatter(
-        x=labels, y=agg["VISITING_POPULATION"],
+        x=labels, y=agg["VISITING_POPULATION"].tolist(),
         mode='lines', stackgroup='one', name='방문인구',
-        line=dict(color='#00CC96'), fillcolor='rgba(0, 204, 150, 0.4)'
+        line=dict(color='#00CC96'), fillcolor='rgba(0, 204, 150, 0.4)',
+        hovertemplate='%{x}<br>방문: %{y:,.0f}명<extra></extra>',
     ))
     fig.update_layout(title=title, xaxis_title="시간대", yaxis_title="인구(명)", height=350)
     return fig

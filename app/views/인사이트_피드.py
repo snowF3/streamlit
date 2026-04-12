@@ -904,6 +904,39 @@ def render():
 
             st.markdown("---")
 
+            # 유동인구 12개월 추이
+            try:
+                pop_12 = pop_agg[(pop_agg["DISTRICT_CODE"] == dc)].copy()
+                pop_12["TOTAL"] = pop_12["RESIDENTIAL_POPULATION"] + pop_12["WORKING_POPULATION"] + pop_12["VISITING_POPULATION"]
+                pop_12 = pop_12.sort_values("STANDARD_YEAR_MONTH").tail(12)
+                if not pop_12.empty:
+                    fig_pop = go.Figure()
+                    fig_pop.add_trace(go.Scatter(
+                        x=pop_12["STANDARD_YEAR_MONTH"].astype(str).tolist(),
+                        y=pop_12["RESIDENTIAL_POPULATION"].tolist(),
+                        mode='lines', name='거주', line=dict(color='#636EFA', width=2),
+                    ))
+                    fig_pop.add_trace(go.Scatter(
+                        x=pop_12["STANDARD_YEAR_MONTH"].astype(str).tolist(),
+                        y=pop_12["WORKING_POPULATION"].tolist(),
+                        mode='lines', name='직장', line=dict(color='#EF553B', width=2),
+                    ))
+                    fig_pop.add_trace(go.Scatter(
+                        x=pop_12["STANDARD_YEAR_MONTH"].astype(str).tolist(),
+                        y=pop_12["VISITING_POPULATION"].tolist(),
+                        mode='lines', name='방문', line=dict(color='#00CC96', width=2),
+                    ))
+                    fig_pop.update_layout(
+                        title=f"{district} 유동인구 12개월 추이",
+                        height=250, xaxis=dict(type="category", dtick=2),
+                        yaxis_title="명", legend=dict(orientation="h", y=-0.2),
+                    )
+                    st.plotly_chart(fig_pop, use_container_width=True, key="pop_12m")
+            except Exception:
+                pass
+
+            st.markdown("---")
+
             # 인터넷 신규설치 추이 (전체)
             try:
                 city_short = city.replace("구", "")
