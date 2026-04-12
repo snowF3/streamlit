@@ -676,14 +676,17 @@ def render():
                 # 디버깅: 데이터 확인
                 with st.expander("데이터 확인 (디버깅)", expanded=False):
                     st.write(f"_hp_dc 행 수: {len(_hp_dc)}, my_hp_until 행 수: {len(my_hp_until)}")
-                    st.write(f"cumsum 마지막: {my_hp_until['cum_score'].iloc[-1] if not my_hp_until.empty else 'N/A'}")
-                    st.write(f"sum: {100 + my_hp_until['hotplace_score'].sum() if not my_hp_until.empty else 'N/A'}")
+                    st.write(f"_hp_dc cumsum 마지막: {_hp_dc['cum_score'].iloc[-1] if not _hp_dc.empty else 'N/A'}")
+                    st.write(f"my_hp_until cumsum 마지막: {my_hp_until['cum_score'].iloc[-1] if not my_hp_until.empty else 'N/A'}")
+                    st.write(f"sum 방식: {100 + my_hp_until['hotplace_score'].sum() if not my_hp_until.empty else 'N/A'}")
                     if not my_hp_until.empty:
+                        st.write("my_hp_until 마지막 5행:")
                         st.dataframe(my_hp_until[["STANDARD_YEAR_MONTH", "hotplace_score", "cum_score"]].tail(5))
 
-                # 점수 추이 미니 차트 (같은 _hp_dc 사용)
+                # 점수 추이 미니 차트
                 if len(my_hp_until) > 1:
-                    trend = my_hp_until.copy()
+                    trend = my_hp_until[["STANDARD_YEAR_MONTH", "hotplace_score"]].copy().reset_index(drop=True)
+                    trend["cum_score"] = 100 + trend["hotplace_score"].cumsum()
                     trend["label"] = trend["STANDARD_YEAR_MONTH"].astype(str).apply(lambda x: f"{x[2:4]}.{x[4:6]}")
                     curr_label = f"{str(latest_month)[2:4]}.{str(latest_month)[4:6]}"
 
@@ -696,6 +699,7 @@ def render():
                         mode="lines+markers", line=dict(color="#6366F1", width=2),
                         marker=dict(size=marker_sizes, color=marker_colors),
                         showlegend=False, name="",
+                        hovertemplate="%{x}<br>핫플 점수: %{y:.1f}점<extra></extra>",
                     ))
                     if curr_label in trend["label"].values:
                         fig_trend.add_vline(x=curr_label, line_dash="dot", line_color="rgba(240,68,82,0.3)")
