@@ -455,22 +455,11 @@ def render_sidebar_chat():
 
         # ── 대화 없을 때 ──
         if not st.session_state.chat_messages:
-            st.markdown("""
-            <div style="text-align:center;padding:8px 8px 4px;">
-                <div style="font-size:18px;font-weight:800;letter-spacing:-0.5px;">XR-AI</div>
-                <div style="font-size:10px;color:#777;margin-top:2px;">상권 분석 에이전트</div>
-            </div>
-            <div style="background:rgba(99,102,241,0.06);padding:10px 12px;border-radius:8px;
-                margin:8px 0 12px;border:1px solid rgba(99,102,241,0.1);">
-                <div style="font-size:11px;color:#999;line-height:1.7;">
-                    서울 118개 법정동의 유동인구, 카드매출, 소득,
-                    부동산 데이터를 실시간 분석합니다.
-                </div>
-                <div style="font-size:9px;color:#555;margin-top:4px;">
-                    SPH · 리치고 · 아정당 3개 데이터 소스 통합
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown("**XR-AI**")
+            st.caption("AI 상권 분석 에이전트")
+            st.markdown("---")
+            st.caption("서울 118개 법정동의 유동인구, 카드매출, 소득, 부동산 데이터를 실시간 분석합니다.")
+            st.caption("SPH · 리치고 · 아정당 3개 데이터 소스 통합")
 
             st.caption("출점 분석")
             if st.button("잠원동 카페 출점 상권 분석", key="q_0", use_container_width=True):
@@ -497,10 +486,7 @@ def render_sidebar_chat():
 
         # ── 대화 있을 때 ──
         else:
-            st.markdown("""<div style="padding:2px 0;">
-                <span style="font-size:13px;font-weight:700;">XR-AI</span>
-                <span style="font-size:9px;color:#555;margin-left:4px;">상권 분석</span>
-            </div>""", unsafe_allow_html=True)
+            st.markdown("**XR-AI** 상권 분석")
             st.markdown("---")
 
             for msg in st.session_state.chat_messages:
