@@ -719,7 +719,7 @@ def render():
         with ai_c1:
             ai_n_rounds = st.selectbox("예측 기간 (개월)", [2, 3, 4, 5], index=1, key="ai_rounds")
         with ai_c2:
-            ai_n_agents = st.selectbox("에이전트 수", [50, 100, 150], index=1, key="ai_agents")
+            ai_n_agents = st.number_input("에이전트 수", min_value=10, max_value=500, value=100, step=10, key="ai_agents")
         with ai_c3:
             ai_scope = st.radio("범위", ["전체 동네", "선택 동네"], horizontal=True, key="ai_scope")
 
@@ -742,14 +742,41 @@ def render():
                         centroids_df=centroids, snapshot_month=int(selected_month),
                     )
 
-                    # 페르소나 생성
+                    # 페르소나 생성 (income_detail 있으면 실데이터, 없으면 파생지표 기반 합성)
                     _personas = []
-                    for _dc in data_districts:
-                        try:
-                            _seeds = generate_persona_seeds(income_detail, income_agg, _dc, int(selected_month))
-                            _personas.extend(_seeds)
-                        except Exception:
-                            pass
+                    if not income_detail.empty:
+                        for _dc in data_districts:
+                            try:
+                                _seeds = generate_persona_seeds(income_detail, income_agg, _dc, int(selected_month))
+                                _personas.extend(_seeds)
+                            except Exception:
+                                pass
+                    if not _personas:
+                        # fallback: derived_metrics 기반 합성 페르소나
+                        _archetypes = [
+                            ("M", "20대", "일반직장", "2~3천만"),
+                            ("F", "20대", "일반직장", "2~3천만"),
+                            ("M", "30대", "대기업", "4~5천만"),
+                            ("F", "30대", "전문직", "5~6천만"),
+                            ("M", "40대", "자영업", "5~6천만"),
+                            ("F", "40대", "일반직장", "4~5천만"),
+                            ("M", "50대", "기타", "3~4천만"),
+                        ]
+                        for _dc in data_districts:
+                            if _dc not in derived.index:
+                                continue
+                            _row = derived.loc[_dc]
+                            _pop = _row.get("total_pop", 1000)
+                            _inc = _row.get("avg_income", 40_000_000)
+                            for _g, _a, _j, _b in _archetypes:
+                                _personas.append({
+                                    "persona_id": f"{_dc}:{_g}_{_a}_{_j}",
+                                    "district_code": _dc, "gender": _g,
+                                    "age_group": _a, "job_type": _j,
+                                    "income_bracket": _b,
+                                    "weight": max(1, int(_pop / len(_archetypes))),
+                                    "avg_income": int(_inc),
+                                })
 
                     # 클러스터 데이터
                     _sim_map = {}
