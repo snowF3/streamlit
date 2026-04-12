@@ -450,6 +450,7 @@ def render():
             )
             st.markdown(f'<ul style="padding-left:18px; margin:6px 0 0;">{reasons_html}</ul>', unsafe_allow_html=True)
 
+        st.markdown("")  # 불릿↔키워드 여백
         kw_html = "".join(f'<span class="kw-tag">{kw}</span>' for kw in sig["keywords"])
         st.markdown(kw_html, unsafe_allow_html=True)
         st.markdown("")  # 키워드 아래 여백
