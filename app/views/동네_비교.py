@@ -13,18 +13,13 @@ from data_loader import (
     load_income_agg
 )
 from charts import CATEGORY_KOR
-from chat_ui import get_chat_layout
-
-st.markdown("""<style>
-html, body, [data-testid="stAppViewContainer"] { font-size: 14px !important; }
-[data-testid="stMetricValue"] { font-size: 20px !important; }
-[data-testid="stMetricLabel"] { font-size: 11px !important; }
-h2, h3 { font-size: 15px !important; }
-</style>""", unsafe_allow_html=True)
-
-content_col = get_chat_layout(page_context="동네 비교")
-# -- 이하 모든 콘텐츠를 content_col 안에 --
-with content_col:
+def render():
+    st.markdown("""<style>
+    html, body, [data-testid="stAppViewContainer"] { font-size: 14px !important; }
+    [data-testid="stMetricValue"] { font-size: 20px !important; }
+    [data-testid="stMetricLabel"] { font-size: 11px !important; }
+    h2, h3 { font-size: 15px !important; }
+    </style>""", unsafe_allow_html=True)
     st.markdown('<span style="font-size:18px; font-weight:800;">동네 비교</span>', unsafe_allow_html=True)
     st.markdown(
         '<div style="display:flex; align-items:center; gap:8px; margin:4px 0;">'

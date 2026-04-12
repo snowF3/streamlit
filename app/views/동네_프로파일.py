@@ -70,9 +70,9 @@ def render():
     # ── 헤더 ──
     h_nb, h_ym = st.columns([4, 2])
     with h_nb:
-        selected = st.selectbox("동네", options, index=default_idx, label_visibility="collapsed")
+        selected = st.selectbox("동네", options, index=default_idx, label_visibility="collapsed", key="profile_district")
     with h_ym:
-        selected_ym_label = st.selectbox("기준 년월", ym_labels, index=0, label_visibility="collapsed")
+        selected_ym_label = st.selectbox("기준 년월", ym_labels, index=0, label_visibility="collapsed", key="profile_month")
 
     selected_month = all_months[ym_labels.index(selected_ym_label)]
 
