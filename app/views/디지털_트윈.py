@@ -67,8 +67,12 @@ centroids = centroids[centroids["district_code"].isin(data_districts)].copy()
 all_months = sorted(pop_agg["STANDARD_YEAR_MONTH"].unique(), reverse=True)
 selected_month = all_months[0]
 
-# 파생지표 계산
-derived = calc_derived_metrics(pop_time, card_agg, pop_agg, income_agg, selected_month)
+# 파생지표 계산 (캐싱)
+@st.cache_data(ttl=3600)
+def _calc_derived(_pop_time, _card_agg, _pop_agg, _income_agg, year_month):
+    return calc_derived_metrics(_pop_time, _card_agg, _pop_agg, _income_agg, year_month)
+
+derived = _calc_derived(pop_time, card_agg, pop_agg, income_agg, selected_month)
 
 # 클러스터링 (캐싱)
 @st.cache_data(ttl=3600)
@@ -94,7 +98,7 @@ name_map = centroids.set_index("district_code")["name"].to_dict()
 time_slots = list(TIME_SLOT_KOR.keys())
 time_labels = list(TIME_SLOT_KOR.values())
 
-ctrl1, ctrl2, ctrl3, ctrl4 = st.columns([2, 1, 1, 1])
+ctrl1, ctrl2, ctrl3 = st.columns([2, 1, 1])
 with ctrl1:
     selected_time_label = st.select_slider(
         "시간대", options=time_labels, value="점심(12~15)")
@@ -105,21 +109,23 @@ with ctrl2:
 with ctrl3:
     metric_options = ["총유동인구", "방문인구", "1인당매출", "낮밤인구비", "클러스터"]
     selected_metric = st.selectbox("지표 선택", metric_options)
-with ctrl4:
-    is_3d = st.checkbox("3D 보기", value=True)
 
 # ══════════════════════════════════════
-# 시간대별 데이터 필터링
+# 시간대별 데이터 필터링 (캐싱)
 # ══════════════════════════════════════
-pt_filtered = pop_time[
-    (pop_time["STANDARD_YEAR_MONTH"] == selected_month)
-    & (pop_time["WEEKDAY_WEEKEND"] == weekday_code)
-    & (pop_time["TIME_SLOT"] == selected_time)
-].copy()
-pt_filtered["total_pop"] = (pt_filtered["RESIDENTIAL_POPULATION"]
-                            + pt_filtered["WORKING_POPULATION"]
-                            + pt_filtered["VISITING_POPULATION"])
-time_by_dc = pt_filtered.set_index("DISTRICT_CODE")
+@st.cache_data(ttl=3600)
+def _filter_pop_time(_pop_time, year_month, weekday_code, time_slot):
+    pt = _pop_time[
+        (_pop_time["STANDARD_YEAR_MONTH"] == year_month)
+        & (_pop_time["WEEKDAY_WEEKEND"] == weekday_code)
+        & (_pop_time["TIME_SLOT"] == time_slot)
+    ].copy()
+    pt["total_pop"] = (pt["RESIDENTIAL_POPULATION"]
+                       + pt["WORKING_POPULATION"]
+                       + pt["VISITING_POPULATION"])
+    return pt.set_index("DISTRICT_CODE")
+
+time_by_dc = _filter_pop_time(pop_time, selected_month, weekday_code, selected_time)
 
 # 지표별 값 매핑
 metric_col_map = {
@@ -131,21 +137,17 @@ metric_col_map = {
 }
 sel_col = metric_col_map[selected_metric]
 
-# ColumnLayer용 DataFrame 구성
+# 지표별 DataFrame 구성
 column_df = centroids.copy()
 
 if sel_col == "cluster":
-    # 클러스터 레이어
     if not cluster_labels.empty:
         cl_df = cluster_labels.reset_index()
         cl_df.columns = ["DISTRICT_CODE", "cluster"]
         column_df = column_df.merge(cl_df, left_on="district_code", right_on="DISTRICT_CODE", how="left")
         column_df.drop(columns=["DISTRICT_CODE"], errors="ignore", inplace=True)
         column_df["cluster"] = column_df["cluster"].fillna(0).astype(int)
-        # 클러스터별 색상
-        colors = [get_cluster_color(c) + [200] for c in column_df["cluster"]]
-        column_df["fill_color"] = colors
-        column_df["elevation"] = 1500  # 균일 높이
+        column_df["fill_color"] = [get_cluster_color(c) + [200] for c in column_df["cluster"]]
         column_df["metric_value"] = column_df["cluster"].map(
             lambda c: cluster_type_map.get(c, f"유형 {c}")
         )
@@ -153,7 +155,6 @@ if sel_col == "cluster":
     else:
         column_df["cluster"] = 0
         column_df["fill_color"] = [[128, 128, 128, 160]] * len(column_df)
-        column_df["elevation"] = 1500
         column_df["metric_value"] = "분류 불가"
         column_df["norm"] = 0.5
 elif sel_col in ("total_pop", "VISITING_POPULATION"):
@@ -170,25 +171,19 @@ else:
     column_df[sel_col] = column_df[sel_col].fillna(0)
 
 if sel_col != "cluster":
-    # 정규화 — 로그 스케일로 이상치 완화
     vals = column_df[sel_col]
     log_vals = np.log1p(vals.clip(lower=0))
     min_v, max_v = log_vals.min(), log_vals.max()
     rng = max_v - min_v if max_v != min_v else 1
     norm_vals = ((log_vals - min_v) / rng).fillna(0)
 
-    column_df["elevation"] = (norm_vals * 3000).fillna(0)
     column_df["metric_value"] = vals.round(1)
     column_df["norm"] = norm_vals
 
-    # 색상 (YlOrRd)
-    colors = []
-    for n in norm_vals:
-        r = 255
-        g = int(255 * (1 - n * 0.8))
-        b = int(255 * (1 - n))
-        colors.append([r, g, b, int(160 + n * 60)])
-    column_df["fill_color"] = colors
+    column_df["fill_color"] = [
+        [255, int(255 * (1 - n * 0.8)), int(255 * (1 - n)), int(160 + n * 60)]
+        for n in norm_vals
+    ]
 
 # ══════════════════════════════════════
 # [B] 메인 시각화: 3D 맵 + 퀵 프로파일
@@ -198,77 +193,51 @@ map_col, profile_col = st.columns([3, 1])
 with map_col:
     st.subheader(f"서울 법정동 — {selected_metric} ({selected_time_label}, {weekday_label})")
 
-    if is_3d:
-        layer = pdk.Layer(
-            "ColumnLayer",
-            data=column_df,
-            get_position=["lon", "lat"],
-            get_elevation="elevation",
-            elevation_scale=30,
-            get_fill_color="fill_color",
-            radius=200,
-            pickable=True,
-            auto_highlight=True,
-            extruded=True,
-        )
-        view = pdk.ViewState(
-            latitude=37.51, longitude=126.95, zoom=11.5,
-            pitch=45, bearing=-27,
-        )
-        deck = pdk.Deck(
-            layers=[layer],
-            initial_view_state=view,
-            tooltip={"text": "{name}\n" + f"{selected_metric}: " + "{metric_value}"},
-            map_provider="carto",
-            map_style="light",
-        )
+    geojson_data = load_geojson()
+    if sel_col == "cluster":
+        cl_color_map = {}
+        for _, row in column_df.iterrows():
+            cl_color_map[row["district_code"]] = {
+                "fill_color": row["fill_color"],
+                "metric_value": row["metric_value"],
+            }
+        for feat in geojson_data["features"]:
+            dc = feat["properties"]["district_code"]
+            info = cl_color_map.get(dc, {"fill_color": [128, 128, 128, 120], "metric_value": "미분류"})
+            feat["properties"]["fill_color"] = info["fill_color"]
+            feat["properties"]["metric_value"] = info["metric_value"]
     else:
-        geojson_data = load_geojson()
-        if sel_col == "cluster":
-            # 클러스터별 색상으로 GeoJSON 채색
-            cl_color_map = {}
-            for _, row in column_df.iterrows():
-                cl_color_map[row["district_code"]] = {
-                    "fill_color": row["fill_color"],
-                    "metric_value": row["metric_value"],
-                }
-            for feat in geojson_data["features"]:
-                dc = feat["properties"]["district_code"]
-                info = cl_color_map.get(dc, {"fill_color": [128, 128, 128, 120], "metric_value": "미분류"})
-                feat["properties"]["fill_color"] = info["fill_color"]
-                feat["properties"]["metric_value"] = info["metric_value"]
-        else:
-            norm_map = column_df.set_index("district_code")[["norm", "metric_value"]].to_dict("index")
-            for feat in geojson_data["features"]:
-                dc = feat["properties"]["district_code"]
-                info = norm_map.get(dc, {"norm": 0, "metric_value": 0})
-                n = info["norm"]
-                feat["properties"]["metric_value"] = info["metric_value"]
-                r, g, b = 255, int(255 * (1 - n * 0.8)), int(255 * (1 - n))
-                a = int(120 + n * 100)
-                feat["properties"]["fill_color"] = [r, g, b, a]
+        norm_map = column_df.set_index("district_code")[["norm", "metric_value"]].to_dict("index")
+        for feat in geojson_data["features"]:
+            dc = feat["properties"]["district_code"]
+            info = norm_map.get(dc, {"norm": 0, "metric_value": 0})
+            n = info["norm"]
+            feat["properties"]["metric_value"] = info["metric_value"]
+            r, g, b = 255, int(255 * (1 - n * 0.8)), int(255 * (1 - n))
+            a = int(120 + n * 100)
+            feat["properties"]["fill_color"] = [r, g, b, a]
 
-        layer = pdk.Layer(
-            "GeoJsonLayer",
-            data=geojson_data,
-            get_fill_color="properties.fill_color",
-            get_line_color=[80, 80, 80, 160],
-            line_width_min_pixels=1,
-            pickable=True,
-            auto_highlight=True,
-            stroked=True,
-        )
-        view = pdk.ViewState(
-            latitude=37.51, longitude=126.95, zoom=11.5,
-            pitch=0, bearing=0,
-        )
-        deck = pdk.Deck(
-            layers=[layer],
-            initial_view_state=view,
-            tooltip={"text": "{name}\n" + f"{selected_metric}: " + "{metric_value}"},
-            map_provider="carto",
-            map_style="light",
-        )
+    layer = pdk.Layer(
+        "GeoJsonLayer",
+        data=geojson_data,
+        get_fill_color="properties.fill_color",
+        get_line_color=[80, 80, 80, 160],
+        line_width_min_pixels=1,
+        pickable=True,
+        auto_highlight=True,
+        stroked=True,
+    )
+    view = pdk.ViewState(
+        latitude=37.51, longitude=126.95, zoom=11.5,
+        pitch=0, bearing=0,
+    )
+    deck = pdk.Deck(
+        layers=[layer],
+        initial_view_state=view,
+        tooltip={"text": "{name}\n" + f"{selected_metric}: " + "{metric_value}"},
+        map_provider="carto",
+        map_style="light",
+    )
     st.pydeck_chart(deck)
 
     # 클러스터 범례
@@ -370,23 +339,23 @@ anal_col1, anal_col2 = st.columns(2)
 
 with anal_col1:
     st.subheader("🔥 시간대별 유동인구 히트맵")
-    pt_heatmap = pop_time[
-        (pop_time["STANDARD_YEAR_MONTH"] == selected_month)
-        & (pop_time["WEEKDAY_WEEKEND"] == weekday_code)
-    ].copy()
-    pt_heatmap["total"] = (pt_heatmap["RESIDENTIAL_POPULATION"]
-                           + pt_heatmap["WORKING_POPULATION"]
-                           + pt_heatmap["VISITING_POPULATION"])
 
-    dc_total = pt_heatmap.groupby("DISTRICT_CODE")["total"].sum().nlargest(20)
-    top20_codes = dc_total.index.tolist()
+    @st.cache_data(ttl=3600)
+    def _heatmap_pivot(_pop_time, year_month, wk_code, slot_order):
+        pt = _pop_time[
+            (_pop_time["STANDARD_YEAR_MONTH"] == year_month)
+            & (_pop_time["WEEKDAY_WEEKEND"] == wk_code)
+        ].copy()
+        pt["total"] = pt["RESIDENTIAL_POPULATION"] + pt["WORKING_POPULATION"] + pt["VISITING_POPULATION"]
+        dc_total = pt.groupby("DISTRICT_CODE")["total"].sum().nlargest(20)
+        top20 = dc_total.index.tolist()
+        pv = pt[pt["DISTRICT_CODE"].isin(top20)].pivot_table(
+            index="DISTRICT_CODE", columns="TIME_SLOT", values="total", aggfunc="sum"
+        )
+        ordered = [s for s in slot_order if s in pv.columns]
+        return pv.reindex(columns=ordered).fillna(0).reindex(top20), top20
 
-    pivot = pt_heatmap[pt_heatmap["DISTRICT_CODE"].isin(top20_codes)].pivot_table(
-        index="DISTRICT_CODE", columns="TIME_SLOT", values="total", aggfunc="sum"
-    )
-    ordered_slots = [s for s in time_slots if s in pivot.columns]
-    pivot = pivot.reindex(columns=ordered_slots).fillna(0)
-    pivot = pivot.reindex(top20_codes)
+    pivot, top20_codes = _heatmap_pivot(pop_time, selected_month, weekday_code, tuple(time_slots))
 
     pivot.index = [name_map.get(dc, dc) for dc in pivot.index]
     pivot.columns = [TIME_SLOT_KOR.get(s, s) for s in pivot.columns]
@@ -401,11 +370,14 @@ with anal_col1:
 
 with anal_col2:
     st.subheader("📊 주중 vs 주말 비교 (Top 10)")
-    pt_compare = pop_time[pop_time["STANDARD_YEAR_MONTH"] == selected_month].copy()
-    pt_compare["total"] = (pt_compare["RESIDENTIAL_POPULATION"]
-                           + pt_compare["WORKING_POPULATION"]
-                           + pt_compare["VISITING_POPULATION"])
-    wk_vs_we = pt_compare.groupby(["DISTRICT_CODE", "WEEKDAY_WEEKEND"])["total"].sum().unstack(fill_value=0)
+
+    @st.cache_data(ttl=3600)
+    def _weekday_weekend_compare(_pop_time, year_month):
+        pt = _pop_time[_pop_time["STANDARD_YEAR_MONTH"] == year_month].copy()
+        pt["total"] = pt["RESIDENTIAL_POPULATION"] + pt["WORKING_POPULATION"] + pt["VISITING_POPULATION"]
+        return pt.groupby(["DISTRICT_CODE", "WEEKDAY_WEEKEND"])["total"].sum().unstack(fill_value=0)
+
+    wk_vs_we = _weekday_weekend_compare(pop_time, selected_month)
 
     if "W" in wk_vs_we.columns and "H" in wk_vs_we.columns:
         wk_vs_we["합계"] = wk_vs_we["W"] + wk_vs_we["H"]
