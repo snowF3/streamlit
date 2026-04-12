@@ -112,6 +112,44 @@ def _render_forecast_cards(pop_agg, card_agg, region_master):
                 <div style="font-size:10px;color:#888;">방문 {row['growth']:.1f}% · 매출 {row['sales_growth']:.1f}%</div>
             </div>""", unsafe_allow_html=True)
 
+    # ── Cortex AI 심층 예측 (상위 1위 동네) ──
+    st.markdown("---")
+    st.markdown("### 🧠 AI 심층 예측")
+    if not rising.empty:
+        top_dc = rising.index[0]
+        top_name = rising.iloc[0]["name"]
+
+        try:
+            from chat_ui import _cortex
+            ts_df = pop_agg[pop_agg["DISTRICT_CODE"] == top_dc].groupby("STANDARD_YEAR_MONTH").agg({
+                "RESIDENTIAL_POPULATION": "sum", "WORKING_POPULATION": "sum", "VISITING_POPULATION": "sum"
+            }).reset_index()
+            ts_df["TOTAL"] = ts_df["RESIDENTIAL_POPULATION"] + ts_df["WORKING_POPULATION"] + ts_df["VISITING_POPULATION"]
+            ts_df = ts_df.sort_values("STANDARD_YEAR_MONTH")
+            ts_str = ts_df[["STANDARD_YEAR_MONTH", "TOTAL"]].to_string(index=False)
+
+            with st.expander(f"🔮 {top_name} — Cortex AI 3개월 예측 (클릭하여 보기)"):
+                with st.spinner("Cortex 분석 중..."):
+                    prompt = f"""{top_name}의 월별 총 유동인구 데이터입니다.
+
+{ts_str}
+
+위 데이터를 분석하여:
+1. 트렌드 (상승/하락/정체)
+2. 계절성 패턴
+3. 향후 3개월 예측값 (표로)
+4. 예측 근거
+5. 리스크 요인
+
+간결하게 표와 핵심만 답변하세요. 한국어로."""
+
+                    ai_forecast = _cortex(prompt)
+                    st.markdown(ai_forecast)
+        except Exception as e:
+            st.caption(f"AI 예측 오류: {e}")
+    else:
+        st.caption("상승 예측 동네가 없어 AI 심층 예측을 건너뜁니다.")
+
     # 렌탈 수요 예측
     st.markdown("---")
     st.markdown("### 📦 렌탈 수요 시그널")
