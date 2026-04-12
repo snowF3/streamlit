@@ -689,6 +689,30 @@ def render():
 
             st.caption("⚠️ 통계 기반 추정치이며, 실제 매출과 차이가 있을 수 있습니다.")
 
+            # ── 디버그: 수식 투입값 확인 ──
+            if result.debug_info:
+                with st.expander("🔍 계산 과정 상세 (디버그)", expanded=False):
+                    st.markdown(f"**수식**: `{result.debug_info.get('수식', '')}`")
+                    st.markdown("---")
+                    debug_left, debug_right = st.columns(2)
+                    with debug_left:
+                        st.markdown("**📊 투입 데이터**")
+                        st.markdown(f"- **유동인구 (footfall)**: `{result.debug_info.get('footfall(total_pop)', '?')}`")
+                        st.markdown(f"- **capture_rate**: `{result.debug_info.get('capture_rate', '?')}`")
+                        st.markdown(f"- **객단가 (avg_ticket)**: `{result.debug_info.get('avg_ticket', '?')}`")
+                        st.markdown(f"- **동네 소득**: `{result.debug_info.get('district_income', '?')}`")
+                        st.markdown(f"- **전체 평균 소득**: `{result.debug_info.get('overall_income_avg', '?')}`")
+                    with debug_right:
+                        st.markdown("**⚙️ 보정 계수**")
+                        st.markdown(f"- **소득 보정**: `{result.debug_info.get('income_correction', '?')}`")
+                        st.markdown(f"- **경쟁 보정**: `{result.debug_info.get('competition_correction', '?')}`")
+                        st.markdown(f"- **낮밤 비율**: `{result.debug_info.get('day_night_ratio', '?')}`")
+                        st.markdown(f"- **HHI**: `{result.debug_info.get('hhi', '?')}`")
+                        st.markdown(f"- **방문 비율**: `{result.debug_info.get('visit_ratio', '?')}`")
+                    st.markdown("---")
+                    st.markdown(f"**결과**: `{result.debug_info.get('mid_raw(원)', '?')}원` → `{result.debug_info.get('mid_man(만원)', '?')}만원`")
+                    st.warning("⚠️ **footfall이 수만 이상**이면 pop_agg에서 주중/주말 × 시간대 × 성별 × 연령 등으로 중복 집계된 값일 수 있습니다. 일일 유동인구(수천~1만)가 정상적입니다.")
+
             # ══════════════════════════════════════
             # 시뮬레이션 비교 (자연스럽고 직관적인 UX)
             # ══════════════════════════════════════

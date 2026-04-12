@@ -38,6 +38,7 @@ class SimulationResult:
     risk_factors: list = field(default_factory=list)
     competition_index: float = 0.0
     time_revenue_dist: dict = field(default_factory=dict)  # 시간대별 매출 비중
+    debug_info: dict = field(default_factory=dict)  # 디버그용 중간 계산값
 
 
 class SimulationEngine(ABC):
@@ -178,6 +179,21 @@ class StatisticalEngine(SimulationEngine):
             risk_factors=risks,
             competition_index=competition_index,
             time_revenue_dist=time_revenue_dist,
+            debug_info={
+                "footfall(total_pop)": f"{footfall:,.0f}",
+                "capture_rate": params["capture_rate"],
+                "avg_ticket": f"{params['avg_ticket']:,}원",
+                "income_correction": round(income_correction, 3),
+                "competition_correction": round(competition_correction, 3),
+                "day_night_ratio": round(day_night, 2),
+                "hhi": round(hhi, 4),
+                "visit_ratio": round(visit_ratio, 3),
+                "district_income": f"{district_income:,.0f}",
+                "overall_income_avg": f"{overall_income:,.0f}",
+                "mid_raw(원)": f"{mid:,.0f}",
+                "mid_man(만원)": f"{mid_man:,}",
+                "수식": f"{footfall:,.0f} × {params['capture_rate']} × {params['avg_ticket']:,} × 30 × {round(income_correction,3)} × {round(competition_correction,3)}",
+            },
         )
 
 
