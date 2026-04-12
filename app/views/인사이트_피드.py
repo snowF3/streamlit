@@ -857,42 +857,50 @@ def render():
                 st.info("소득 데이터 없음")
 
         with tab_rental:
-            # 영유아/여성 비율
             try:
                 from data_loader import load_richgo_fertility, AJD
                 fertility = load_richgo_fertility()
-                ft = fertility[fertility["SGG"] == city]
-                if not ft.empty and "AGE_UNDER5_PER_FEMALE_20TO40" in ft.columns:
-                    avg_ratio = ft["AGE_UNDER5_PER_FEMALE_20TO40"].mean()
-                    st.metric("영유아/가임여성 비율", f"{avg_ratio:.3f}")
-                    if avg_ratio > 0.15:
-                        st.caption("영유아 비율 높음 — 정수기/공기청정기 렌탈 수요 높을 가능성")
-                    elif avg_ratio < 0.08:
+                ft_city = fertility[fertility["SGG"] == city]
+
+                if not ft_city.empty and "AGE_UNDER5_PER_FEMALE_20TO40" in ft_city.columns:
+                    # 현재 동네 비율
+                    ft_district = ft_city[ft_city["EMD"] == district]
+                    if not ft_district.empty:
+                        my_ratio = ft_district["AGE_UNDER5_PER_FEMALE_20TO40"].values[0]
+                    else:
+                        my_ratio = ft_city["AGE_UNDER5_PER_FEMALE_20TO40"].mean()
+
+                    st.metric(f"{district} 영유아/가임여성 비율", f"{my_ratio:.3f}")
+                    if my_ratio > 0.15:
+                        st.caption("영유아 비율 높음 — 육아 가구 밀집 지역")
+                    elif my_ratio < 0.08:
                         st.caption("영유아 비율 낮음 — 1인/2인 가구 중심")
+
+                    # 같은 구 내 법정동별 비교 바 차트
+                    ft_valid = ft_city[ft_city["AGE_UNDER5_PER_FEMALE_20TO40"].notna()].copy()
+                    if len(ft_valid) > 1:
+                        ft_sorted = ft_valid.sort_values("AGE_UNDER5_PER_FEMALE_20TO40", ascending=True)
+                        # 상위 15개만
+                        ft_top = ft_sorted.tail(15)
+                        colors = ['#6366F1' if e != district else '#EF553B' for e in ft_top["EMD"]]
+                        fig_ft = go.Figure(go.Bar(
+                            x=ft_top["AGE_UNDER5_PER_FEMALE_20TO40"].tolist(),
+                            y=ft_top["EMD"].tolist(),
+                            orientation='h',
+                            marker_color=colors,
+                            hovertemplate='%{y}: %{x:.3f}<extra></extra>',
+                        ))
+                        fig_ft.update_layout(
+                            title=f"{city} 법정동별 영유아/가임여성 비율",
+                            height=300, xaxis_title="비율",
+                            yaxis=dict(tickfont=dict(size=10)),
+                        )
+                        st.plotly_chart(fig_ft, use_container_width=True, key="fertility_chart")
+                        st.caption(f"빨간색: {district} (현재 선택)")
                 else:
                     st.caption("영유아 데이터: 중구, 영등포구, 서초구만 제공")
             except Exception:
                 pass
-
-            st.markdown("---")
-
-            # 렌탈 트렌드 (최근 6개월 누적)
-            try:
-                rental = run_query(f"""
-                    SELECT RENTAL_SUB_CATEGORY as ITEM,
-                           SUM(CONTRACT_COUNT) as CONTRACTS
-                    FROM {AJD}.V06_RENTAL_CATEGORY_TRENDS
-                    WHERE YEAR_MONTH >= (SELECT MAX(YEAR_MONTH) - 6 FROM {AJD}.V06_RENTAL_CATEGORY_TRENDS)
-                    GROUP BY 1 ORDER BY CONTRACTS DESC LIMIT 5
-                """)
-                if not rental.empty:
-                    st.markdown("**전국 인기 렌탈 Top 5** (최근 6개월)")
-                    for _, row in rental.iterrows():
-                        st.markdown(f"- {row['ITEM']}: {int(row['CONTRACTS']):,}건")
-                else:
-                    st.caption("렌탈 데이터 조회 결과 없음")
-            except Exception as e:
-                st.caption(f"렌탈 데이터 오류: {e}")
 
             st.markdown("---")
 
