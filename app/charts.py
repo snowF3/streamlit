@@ -160,10 +160,18 @@ def realestate_trend_chart(re_df, title="매매/전세 시세 추이"):
         return go.Figure().update_layout(title="데이터 없음")
 
     df = re_df.sort_values("YYYYMMDD").copy()
-    # YYYYMMDD를 문자열로 변환
-    df["date_str"] = df["YYYYMMDD"].astype(str).apply(
-        lambda x: f"{x[:4]}.{x[4:6]}" if len(str(x)) >= 6 else str(x)
-    )
+    # YYYYMMDD를 문자열로 변환 (날짜 형식: 2014-09-01 또는 20140901)
+    def _parse_date(x):
+        s = str(x)
+        if "-" in s:
+            # 2014-09-01 형식
+            parts = s.split("-")
+            return f"{parts[0]}.{parts[1]}"
+        elif len(s) >= 6:
+            # 20140901 형식
+            return f"{s[:4]}.{s[4:6]}"
+        return s
+    df["date_str"] = df["YYYYMMDD"].apply(_parse_date)
 
     fig = go.Figure()
     if "MEME_PRICE_PER_SUPPLY_PYEONG" in df.columns:
