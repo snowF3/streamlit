@@ -29,9 +29,16 @@ from clustering import (
     find_similar_districts, get_cluster_color, FEATURE_COLS,
 )
 from profile_generator import (
-    generate_persona_seeds, generate_persona_text, get_persona_summary,
+    generate_all_profiles, generate_persona_seeds,
+    generate_persona_text, get_persona_summary,
 )
 from charts import TIME_SLOT_KOR, spending_radar_chart
+try:
+    from mirofish import run_prediction
+    from mirofish.report import generate_surge_text
+    MIROFISH_AVAILABLE = True
+except ImportError:
+    MIROFISH_AVAILABLE = False
 
 
 def render():
@@ -699,6 +706,10 @@ def render():
 
     # ── 탭4: AI 에이전트 예측 (MiroFish Lite) ──
     with tab_ai:
+        if not MIROFISH_AVAILABLE:
+            st.warning("MiroFish 모듈을 로드할 수 없습니다.")
+            st.stop()
+
         st.markdown(
             "**MiroFish Lite** — AI 에이전트가 가상 페르소나로 미래 상권 변화를 시뮬레이션합니다."
         )
@@ -724,11 +735,6 @@ def render():
         if st.button("AI 예측 실행", type="primary", use_container_width=True, key="ai_run"):
             with st.spinner("MiroFish 시뮬레이션 준비 중..."):
                 try:
-                    from profile_generator import generate_all_profiles, generate_persona_seeds
-                    from clustering import find_similar_districts
-                    from mirofish import run_prediction
-                    from mirofish.report import generate_surge_text
-
                     # 프로파일 생성
                     _profiles = generate_all_profiles(
                         derived_metrics=derived, card_agg_df=card_agg,
@@ -833,7 +839,6 @@ def render():
             if st.button("AI 분석 보고서 생성", key="ai_report"):
                 with st.spinner("Cortex AI가 보고서 작성 중..."):
                     try:
-                        from mirofish.report import generate_surge_text
                         _report = generate_surge_text(_surge, _trends, _sim_out)
                         st.markdown(_report)
                     except Exception as e:
