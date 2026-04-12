@@ -32,7 +32,6 @@ from profile_generator import (
     generate_persona_seeds, generate_persona_text, get_persona_summary,
 )
 from charts import TIME_SLOT_KOR, spending_radar_chart
-from chat_ui import render_sidebar_chat
 
 st.title("🏙️ 디지털 트윈")
 st.caption("서울 법정동 시간대별 도시 흐름 시뮬레이션 · 데이터 범위: 중구 · 영등포구 · 서초구")
@@ -707,7 +706,3 @@ with tab_ai:
         "- 상권 변화 예측 보고서 자동 생성 (Phase 3)"
     )
 
-# ══════════════════════════════════════
-# [E] AI 채팅
-# ══════════════════════════════════════
-render_sidebar_chat()
