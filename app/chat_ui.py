@@ -26,13 +26,16 @@ def _classify(q, h=""):
     p = f"""Classify this question. Return JSON only.
 Previous: {h[:200]}
 Question: {q}
-{{"intent":"lookup|compare|trend|simulate|recommend|hotplace","district":"district_name|null","category":"business_type|null"}}"""
+{{"intent":"lookup|compare|trend|simulate|recommend|hotplace|marketing|rental|forecast|realestate","district":"district_name|null","category":"business_type|null"}}"""
     resp = _cortex(p)
     try:
         m = re.search(r'\{.*\}', resp, re.DOTALL)
         if m: return json.loads(m.group())
     except: pass
     return {"intent": "lookup", "district": None, "category": None}
+
+
+# intent에 marketing, rental, forecast 추가
 
 
 def _qpop(d):
@@ -128,6 +131,77 @@ def _qhot(n=10):
         return f"조회오류: {e}"
 
 
+def _qrental():
+    """렌탈 트렌드 조회"""
+    try:
+        df = run_query(f"""
+            SELECT RENTAL_SUB_CATEGORY as CATEGORY,
+                   SUM(CONTRACT_COUNT) as CONTRACTS,
+                   ROUND(AVG(OPEN_CVR), 1) as OPEN_RATE,
+                   ROUND(AVG(AVG_NET_SALES)) as AVG_SALES_KRW
+            FROM {AJD}.V06_RENTAL_CATEGORY_TRENDS
+            WHERE YEAR_MONTH = (SELECT MAX(YEAR_MONTH) FROM {AJD}.V06_RENTAL_CATEGORY_TRENDS)
+            GROUP BY 1 ORDER BY CONTRACTS DESC LIMIT 10
+        """)
+        return df.to_string(index=False) if not df.empty else "데이터 없음"
+    except Exception as e:
+        return f"조회오류: {e}"
+
+
+def _qmarketing():
+    """마케팅 채널 성과 조회"""
+    try:
+        df = run_query(f"""
+            SELECT UTM_SOURCE as SOURCE, UTM_MEDIUM as MEDIUM,
+                   SUM(TOTAL_SESSIONS) as SESSIONS,
+                   SUM(TOTAL_CONTRACTS) as CONTRACTS,
+                   ROUND(AVG(CONTRACT_CVR), 2) as CVR_PCT,
+                   ROUND(SUM(TOTAL_REVENUE) / 1e8, 1) as REVENUE_BILLION
+            FROM {AJD}.V07_GA4_MARKETING_ATTRIBUTION
+            WHERE YEAR_MONTH = (SELECT MAX(YEAR_MONTH) FROM {AJD}.V07_GA4_MARKETING_ATTRIBUTION)
+            GROUP BY 1, 2 ORDER BY REVENUE_BILLION DESC LIMIT 10
+        """)
+        return df.to_string(index=False) if not df.empty else "데이터 없음"
+    except Exception as e:
+        return f"조회오류: {e}"
+
+
+def _qfunnel():
+    """퍼널 전환율 조회"""
+    try:
+        df = run_query(f"""
+            SELECT MAIN_CATEGORY_NAME as CATEGORY,
+                   SUM(TOTAL_COUNT) as TOTAL,
+                   SUM(PAYEND_COUNT) as PAID,
+                   ROUND(AVG(OVERALL_CVR), 1) as OVERALL_CVR_PCT
+            FROM {AJD}.V03_CONTRACT_FUNNEL_CONVERSION
+            WHERE YEAR_MONTH = (SELECT MAX(YEAR_MONTH) FROM {AJD}.V03_CONTRACT_FUNNEL_CONVERSION)
+            GROUP BY 1 ORDER BY TOTAL DESC
+        """)
+        return df.to_string(index=False) if not df.empty else "데이터 없음"
+    except Exception as e:
+        return f"조회오류: {e}"
+
+
+def _qrealestate(d):
+    """부동산 시세 조회"""
+    try:
+        from data_loader import RICHGO
+        s = d.replace("'", "''")
+        df = run_query(f"""
+            SELECT SGG, EMD, YYYYMMDD as DATE,
+                   MEME_PRICE_PER_SUPPLY_PYEONG as SALE_PRICE_PER_PYEONG,
+                   JEONSE_PRICE_PER_SUPPLY_PYEONG as JEONSE_PRICE_PER_PYEONG,
+                   TOTAL_HOUSEHOLDS
+            FROM {RICHGO}.REGION_APT_RICHGO_MARKET_PRICE_M_H
+            WHERE EMD LIKE '%{s}%' AND REGION_LEVEL = 'emd'
+            ORDER BY YYYYMMDD DESC LIMIT 12
+        """)
+        return df.to_string(index=False) if not df.empty else f"'{d}' 부동산 데이터 없음"
+    except Exception as e:
+        return f"조회오류: {e}"
+
+
 def _answer(q, hist_list, pctx="", sel_d=""):
     hist = "\n".join([f"{'사용자' if m['role']=='user' else 'AI'}: {m['content'][:150]}" for m in hist_list[-4:]]) if hist_list else ""
     info = _classify(q, hist)
@@ -146,7 +220,40 @@ def _answer(q, hist_list, pctx="", sel_d=""):
     elif intent == "simulate" and d:
         data = f"[유동인구]\n{_qpop(d)}\n\n[카드매출]\n{_qsales(d)}\n\n[소득]\n{_qincome(d)}"
     elif intent == "recommend":
-        data = (f"[카드매출]\n{_qsales(d)}\n\n[소득]\n{_qincome(d)}") if d else f"[핫플]\n{_qhot(5)}"
+        data = (f"[카드매출]\n{_qsales(d)}\n\n[소득]\n{_qincome(d)}\n\n[렌탈 트렌드]\n{_qrental()}") if d else f"[핫플]\n{_qhot(5)}\n\n[렌탈 트렌드]\n{_qrental()}"
+    elif intent == "marketing":
+        data = f"[마케팅 채널 성과]\n{_qmarketing()}\n\n[퍼널 전환율]\n{_qfunnel()}"
+    elif intent == "rental":
+        data = f"[렌탈 트렌드]\n{_qrental()}\n\n[퍼널 전환율]\n{_qfunnel()}"
+    elif intent == "forecast" and d:
+        data = f"[{d} 유동인구 12개월 추이]\n"
+        try:
+            s = d.replace("'", "''")
+            df = run_query(f"""
+                SELECT STANDARD_YEAR_MONTH,
+                       ROUND(SUM(RESIDENTIAL_POPULATION + WORKING_POPULATION + VISITING_POPULATION)) as TOTAL_POP
+                FROM {SPH}.FLOATING_POPULATION_INFO f
+                JOIN {SPH}.M_SCCO_MST m ON f.DISTRICT_CODE = m.DISTRICT_CODE
+                WHERE m.DISTRICT_KOR_NAME LIKE '%{s}%'
+                GROUP BY 1 ORDER BY 1 DESC LIMIT 12
+            """)
+            data += df.to_string(index=False)
+        except: pass
+        data += f"\n\n[{d} 카드매출 12개월 추이]\n"
+        try:
+            df2 = run_query(f"""
+                SELECT STANDARD_YEAR_MONTH,
+                       ROUND(SUM(TOTAL_SALES)) as TOTAL_SALES
+                FROM {SPH}.CARD_SALES_INFO c
+                JOIN {SPH}.M_SCCO_MST m ON c.DISTRICT_CODE = m.DISTRICT_CODE
+                WHERE m.DISTRICT_KOR_NAME LIKE '%{s}%' AND c.CARD_TYPE = '1'
+                GROUP BY 1 ORDER BY 1 DESC LIMIT 12
+            """)
+            data += df2.to_string(index=False)
+        except: pass
+        data += f"\n\n[부동산 시세]\n{_qrealestate(d)}"
+    elif intent == "realestate" and d:
+        data = f"[{d} 부동산 시세 추이]\n{_qrealestate(d)}"
     elif intent == "trend" and d:
         try:
             s = d.replace("'", "''")
@@ -186,6 +293,11 @@ def _answer(q, hist_list, pctx="", sel_d=""):
 - COFFEE_SALES_KRW: 커피/카페 매출
 - AVG_INCOME_KRW: 평균 소득 (원 단위)
 - GROWTH_PCT: 방문인구 증가율 (%)
+- CONTRACTS: 계약 건수 (아정당 렌탈/인터넷)
+- CVR_PCT: 전환율 (%)
+- REVENUE_BILLION: 매출 (억원)
+- SALE_PRICE_PER_PYEONG: 매매 평단가 (만원/평)
+- JEONSE_PRICE_PER_PYEONG: 전세 평단가 (만원/평)
 
 [이전 대화]
 {hist}
@@ -249,10 +361,12 @@ def render_sidebar_chat():
         if not st.session_state.chat_messages:
             st.caption("💡 추천 질문")
             qs = [
-                ("신당동의 거주인구, 직장인구, 방문인구 각각 알려주고 어떤 특징이 있는지 분석해줘", "🔍 신당동 유동인구"),
-                ("최근 방문인구가 가장 많이 늘어난 동네 Top 5와 그 이유를 분석해줘", "🔥 핫플 Top 5"),
-                ("신당동과 여의도동의 유동인구와 매출을 비교 분석해줘", "⚖️ 매출 비교"),
-                ("잠원동의 소비 데이터를 분석해서 어떤 업종이 유망한지 추천해줘", "💡 업종 추천"),
+                ("신당동의 유동인구와 카드매출을 분석해줘", "🔍 동네 분석"),
+                ("방문인구 증가율 Top 5 동네와 성장 이유", "🔥 핫플 예측"),
+                ("잠원동 3개월 후 상권 전망을 예측해줘", "🔮 미래 예측"),
+                ("어떤 마케팅 채널이 ROI가 높은지 분석해줘", "📢 마케팅 ROI"),
+                ("요즘 렌탈 시장에서 어떤 품목이 뜨고 있어?", "📦 렌탈 트렌드"),
+                ("잠원동 부동산 시세 추이 보여줘", "🏠 부동산 시세"),
             ]
 
             # session_state로 버튼 클릭 추적 (연쇄 방지)
