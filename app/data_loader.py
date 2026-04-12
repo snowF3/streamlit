@@ -443,3 +443,32 @@ def filter_by_district(df, district_code, col="DISTRICT_CODE"):
 
 def filter_by_year_month(df, year_month, col="STANDARD_YEAR_MONTH"):
     return df[df[col] == year_month]
+
+
+@st.cache_data(ttl=3600)
+def load_district_centroids():
+    """GeoJSON에서 법정동 중심점 좌표 추출 (산술 평균)"""
+    geojson = load_geojson()
+    rows = []
+    for feature in geojson["features"]:
+        props = feature["properties"]
+        geom = feature["geometry"]
+        coords = geom.get("coordinates", [])
+        all_points = []
+        if geom["type"] == "MultiPolygon":
+            for polygon in coords:
+                if polygon:
+                    all_points.extend(polygon[0])
+        elif geom["type"] == "Polygon":
+            if coords:
+                all_points.extend(coords[0])
+        if all_points:
+            lons = [p[0] for p in all_points]
+            lats = [p[1] for p in all_points]
+            rows.append({
+                "district_code": props["district_code"],
+                "name": props["name"],
+                "lat": sum(lats) / len(lats),
+                "lon": sum(lons) / len(lons),
+            })
+    return pd.DataFrame(rows)
