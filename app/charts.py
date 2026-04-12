@@ -88,19 +88,22 @@ def population_flow_chart(pop_time_df, title="시간대별 유동인구"):
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(
-        x=labels, y=agg["RESIDENTIAL_POPULATION"],
+        x=labels, y=agg["RESIDENTIAL_POPULATION"].tolist(),
         mode='lines', stackgroup='one', name='거주인구',
-        line=dict(color='#636EFA'), fillcolor='rgba(99, 110, 250, 0.4)'
+        line=dict(color='#636EFA'), fillcolor='rgba(99, 110, 250, 0.4)',
+        hovertemplate='%{x}<br>거주: %{y:,.0f}명<extra></extra>',
     ))
     fig.add_trace(go.Scatter(
-        x=labels, y=agg["WORKING_POPULATION"],
+        x=labels, y=agg["WORKING_POPULATION"].tolist(),
         mode='lines', stackgroup='one', name='직장인구',
-        line=dict(color='#EF553B'), fillcolor='rgba(239, 85, 59, 0.4)'
+        line=dict(color='#EF553B'), fillcolor='rgba(239, 85, 59, 0.4)',
+        hovertemplate='%{x}<br>직장: %{y:,.0f}명<extra></extra>',
     ))
     fig.add_trace(go.Scatter(
-        x=labels, y=agg["VISITING_POPULATION"],
+        x=labels, y=agg["VISITING_POPULATION"].tolist(),
         mode='lines', stackgroup='one', name='방문인구',
-        line=dict(color='#00CC96'), fillcolor='rgba(0, 204, 150, 0.4)'
+        line=dict(color='#00CC96'), fillcolor='rgba(0, 204, 150, 0.4)',
+        hovertemplate='%{x}<br>방문: %{y:,.0f}명<extra></extra>',
     ))
     fig.update_layout(title=title, xaxis_title="시간대", yaxis_title="인구(명)", height=350)
     return fig
@@ -159,35 +162,53 @@ def realestate_trend_chart(re_df, title="매매/전세 시세 추이"):
     if re_df.empty:
         return go.Figure().update_layout(title="데이터 없음")
 
-    df = re_df.sort_values("YYYYMMDD").copy()
-    # YYYYMMDD를 문자열로 변환
-    df["date_str"] = df["YYYYMMDD"].astype(str).apply(
-        lambda x: f"{x[:4]}.{x[4:6]}" if len(str(x)) >= 6 else str(x)
-    )
+    df = re_df.sort_values("YYYYMMDD").copy().reset_index(drop=True)
+
+    # YYYYMMDD → 날짜 라벨 (카테고리로 사용)
+    def _parse_date(x):
+        s = str(x)
+        if "-" in s:
+            parts = s.split("-")
+            return f"{parts[0]}-{parts[1]}"
+        elif len(s) >= 6:
+            return f"{s[:4]}-{s[4:6]}"
+        return s
+    df["date_label"] = df["YYYYMMDD"].apply(_parse_date)
 
     fig = go.Figure()
+
     if "MEME_PRICE_PER_SUPPLY_PYEONG" in df.columns:
         meme = df[df["MEME_PRICE_PER_SUPPLY_PYEONG"].notna() & (df["MEME_PRICE_PER_SUPPLY_PYEONG"] > 0)]
         if not meme.empty:
             fig.add_trace(go.Scatter(
-                x=meme["date_str"], y=meme["MEME_PRICE_PER_SUPPLY_PYEONG"],
-                mode='lines', name='매매 평단가 (만원/평)',
-                line=dict(color='#EF553B', width=2)
+                x=meme["date_label"].tolist(),
+                y=meme["MEME_PRICE_PER_SUPPLY_PYEONG"].tolist(),
+                mode='lines', name='매매 평단가',
+                line=dict(color='#EF553B', width=2),
+                hovertemplate='%{x}<br>매매: %{y:,.0f}만원/평<extra></extra>',
             ))
+
     if "JEONSE_PRICE_PER_SUPPLY_PYEONG" in df.columns:
         jeonse = df[df["JEONSE_PRICE_PER_SUPPLY_PYEONG"].notna() & (df["JEONSE_PRICE_PER_SUPPLY_PYEONG"] > 0)]
         if not jeonse.empty:
             fig.add_trace(go.Scatter(
-                x=jeonse["date_str"], y=jeonse["JEONSE_PRICE_PER_SUPPLY_PYEONG"],
-                mode='lines', name='전세 평단가 (만원/평)',
-                line=dict(color='#636EFA', width=2)
+                x=jeonse["date_label"].tolist(),
+                y=jeonse["JEONSE_PRICE_PER_SUPPLY_PYEONG"].tolist(),
+                mode='lines', name='전세 평단가',
+                line=dict(color='#636EFA', width=2),
+                hovertemplate='%{x}<br>전세: %{y:,.0f}만원/평<extra></extra>',
             ))
+
     if len(fig.data) == 0:
         return go.Figure().update_layout(title=f"{title} — 데이터 없음")
 
     fig.update_layout(
-        title=title, xaxis_title="", yaxis_title="만원/평",
-        height=300, legend=dict(orientation="h", y=-0.15),
+        title=title,
+        xaxis=dict(title="", type="category", tickangle=-45, dtick=12),
+        yaxis=dict(title="만원/평"),
+        height=300,
+        legend=dict(orientation="h", y=-0.2),
+        hovermode="x unified",
     )
     return fig
 

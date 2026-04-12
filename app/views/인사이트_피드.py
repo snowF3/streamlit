@@ -681,10 +681,11 @@ def render():
                     marker_sizes = [10 if lb == curr_label else 3 for lb in trend["label"]]
 
                     fig_trend = go.Figure(go.Scatter(
-                        x=trend["label"], y=trend["cum_score"],
+                        x=trend["label"].tolist(), y=trend["cum_score"].tolist(),
                         mode="lines+markers", line=dict(color="#6366F1", width=2),
                         marker=dict(size=marker_sizes, color=marker_colors),
-                        showlegend=False, name="",
+                        showlegend=False, name="핫플 점수",
+                        hovertemplate='%{x}<br>%{y:.1f}점<extra></extra>',
                     ))
                     if curr_label in trend["label"].values:
                         fig_trend.add_vline(x=curr_label, line_dash="dot", line_color="rgba(240,68,82,0.3)")
@@ -786,11 +787,11 @@ def render():
                     labels = [TIME_SLOT_KOR.get(t, t) for t in ct_agg.index]
                     fig_ct = go.Figure()
                     if "TOTAL_SALES" in ct_agg.columns:
-                        fig_ct.add_trace(go.Bar(x=labels, y=ct_agg["TOTAL_SALES"], name="전체", marker_color="#636EFA"))
+                        fig_ct.add_trace(go.Bar(x=labels, y=ct_agg["TOTAL_SALES"].tolist(), name="전체", marker_color="#636EFA"))
                     if "FOOD_SALES" in ct_agg.columns:
-                        fig_ct.add_trace(go.Bar(x=labels, y=ct_agg["FOOD_SALES"], name="식음료", marker_color="#EF553B"))
+                        fig_ct.add_trace(go.Bar(x=labels, y=ct_agg["FOOD_SALES"].tolist(), name="식음료", marker_color="#EF553B"))
                     if "COFFEE_SALES" in ct_agg.columns:
-                        fig_ct.add_trace(go.Bar(x=labels, y=ct_agg["COFFEE_SALES"], name="커피", marker_color="#00CC96"))
+                        fig_ct.add_trace(go.Bar(x=labels, y=ct_agg["COFFEE_SALES"].tolist(), name="커피", marker_color="#00CC96"))
                     fig_ct.update_layout(title="시간대별 카드매출", barmode="group", height=230,
                                         margin=dict(l=25, r=10, t=30, b=25),
                                         yaxis_title="매출(원)", xaxis_title="시간대")
@@ -824,15 +825,20 @@ def render():
         with tab_estate:
             try:
                 re = load_realestate()
-                re_d = re[(re["BJD_CODE"].astype(str).str[:8] == dc) & (re["REGION_LEVEL"] == "emd")]
+                # 1차: EMD(동이름)로 정확 매칭
+                re_d = re[(re["EMD"] == district) & (re["SGG"] == city) & (re["REGION_LEVEL"] == "emd")]
+                # 2차: BJD_CODE 앞 8자리로 매칭 (EMD 매칭 실패 시)
+                if re_d.empty:
+                    re_d = re[(re["BJD_CODE"].astype(str).str[:8] == dc) & (re["REGION_LEVEL"] == "emd")]
                 if not re_d.empty:
                     fig = realestate_trend_chart(re_d, f"{district} 매매/전세 추이")
                     fig.update_layout(height=270)
                     st.plotly_chart(fig, use_container_width=True, key="my_re")
                 else:
+                    # 3차: 시군구 레벨
                     re_sgg = re[(re["SGG"] == city) & (re["REGION_LEVEL"] == "sgg")]
                     if not re_sgg.empty:
-                        fig = realestate_trend_chart(re_sgg, f"{city}(시군구) 추이")
+                        fig = realestate_trend_chart(re_sgg, f"{city}(시군구 평균) 매매/전세 추이")
                         fig.update_layout(height=270)
                         st.plotly_chart(fig, use_container_width=True, key="my_re_sgg")
                     else:
@@ -852,62 +858,113 @@ def render():
                 st.info("소득 데이터 없음")
 
         with tab_rental:
-            # 영유아/여성 비율
             try:
-                from data_loader import load_richgo_fertility, load_ajd_new_install, AJD
+                from data_loader import load_richgo_fertility, AJD
                 fertility = load_richgo_fertility()
-                ft = fertility[fertility["SGG"] == city]
-                if not ft.empty and "AGE_UNDER5_PER_FEMALE_20TO40" in ft.columns:
-                    avg_ratio = ft["AGE_UNDER5_PER_FEMALE_20TO40"].mean()
-                    st.metric("영유아/가임여성 비율", f"{avg_ratio:.3f}")
-                    if avg_ratio > 0.15:
-                        st.caption("💡 영유아 비율 높음 → 정수기/공기청정기 렌탈 수요 높을 가능성")
-                    elif avg_ratio < 0.08:
-                        st.caption("💡 영유아 비율 낮음 → 1인/2인 가구 중심")
+                ft_city = fertility[fertility["SGG"] == city]
+
+                if not ft_city.empty and "AGE_UNDER5_PER_FEMALE_20TO40" in ft_city.columns:
+                    # 현재 동네 비율
+                    ft_district = ft_city[ft_city["EMD"] == district]
+                    if not ft_district.empty:
+                        my_ratio = ft_district["AGE_UNDER5_PER_FEMALE_20TO40"].values[0]
+                    else:
+                        my_ratio = ft_city["AGE_UNDER5_PER_FEMALE_20TO40"].mean()
+
+                    st.metric(f"{district} 영유아/가임여성 비율", f"{my_ratio:.3f}")
+                    if my_ratio > 0.15:
+                        st.caption("영유아 비율 높음 — 육아 가구 밀집 지역")
+                    elif my_ratio < 0.08:
+                        st.caption("영유아 비율 낮음 — 1인/2인 가구 중심")
+
+                    # 같은 구 내 법정동별 비교 바 차트
+                    ft_valid = ft_city[ft_city["AGE_UNDER5_PER_FEMALE_20TO40"].notna()].copy()
+                    if len(ft_valid) > 1:
+                        ft_sorted = ft_valid.sort_values("AGE_UNDER5_PER_FEMALE_20TO40", ascending=True)
+                        # 상위 15개만
+                        ft_top = ft_sorted.tail(15)
+                        colors = ['#6366F1' if e != district else '#EF553B' for e in ft_top["EMD"]]
+                        fig_ft = go.Figure(go.Bar(
+                            x=ft_top["AGE_UNDER5_PER_FEMALE_20TO40"].tolist(),
+                            y=ft_top["EMD"].tolist(),
+                            orientation='h',
+                            marker_color=colors,
+                            hovertemplate='%{y}: %{x:.3f}<extra></extra>',
+                        ))
+                        fig_ft.update_layout(
+                            title=f"{city} 법정동별 영유아/가임여성 비율",
+                            height=300, xaxis_title="비율",
+                            yaxis=dict(tickfont=dict(size=10)),
+                        )
+                        st.plotly_chart(fig_ft, use_container_width=True, key="fertility_chart")
+                        st.caption(f"빨간색: {district} (현재 선택)")
                 else:
-                    st.caption("영유아 데이터: 중구·영등포구·서초구만 제공")
+                    st.caption("영유아 데이터: 중구, 영등포구, 서초구만 제공")
             except Exception:
                 pass
 
-            # 렌탈 트렌드
-            try:
-                rental = run_query(f"""
-                    SELECT RENTAL_SUB_CATEGORY as ITEM,
-                           SUM(CONTRACT_COUNT) as CONTRACTS
-                    FROM {AJD}.V06_RENTAL_CATEGORY_TRENDS
-                    WHERE INSTALL_STATE LIKE '%서울%'
-                      AND YEAR_MONTH = (SELECT MAX(YEAR_MONTH) FROM {AJD}.V06_RENTAL_CATEGORY_TRENDS)
-                    GROUP BY 1 ORDER BY CONTRACTS DESC LIMIT 5
-                """)
-                if not rental.empty:
-                    st.markdown("**서울 인기 렌탈 Top 5**")
-                    for _, row in rental.iterrows():
-                        st.markdown(f"- {row['ITEM']}: {int(row['CONTRACTS']):,}건")
-                else:
-                    st.caption("렌탈 데이터 없음")
-            except Exception:
-                st.caption("렌탈 데이터 로드 오류")
+            st.markdown("---")
 
-            # 인터넷 신규설치 추이
+            # 유동인구 12개월 추이
             try:
+                pop_12 = pop_agg[(pop_agg["DISTRICT_CODE"] == dc)].copy()
+                pop_12["TOTAL"] = pop_12["RESIDENTIAL_POPULATION"] + pop_12["WORKING_POPULATION"] + pop_12["VISITING_POPULATION"]
+                pop_12 = pop_12.sort_values("STANDARD_YEAR_MONTH").tail(12)
+                if not pop_12.empty:
+                    fig_pop = go.Figure()
+                    fig_pop.add_trace(go.Scatter(
+                        x=pop_12["STANDARD_YEAR_MONTH"].astype(str).tolist(),
+                        y=pop_12["RESIDENTIAL_POPULATION"].tolist(),
+                        mode='lines', name='거주', line=dict(color='#636EFA', width=2),
+                    ))
+                    fig_pop.add_trace(go.Scatter(
+                        x=pop_12["STANDARD_YEAR_MONTH"].astype(str).tolist(),
+                        y=pop_12["WORKING_POPULATION"].tolist(),
+                        mode='lines', name='직장', line=dict(color='#EF553B', width=2),
+                    ))
+                    fig_pop.add_trace(go.Scatter(
+                        x=pop_12["STANDARD_YEAR_MONTH"].astype(str).tolist(),
+                        y=pop_12["VISITING_POPULATION"].tolist(),
+                        mode='lines', name='방문', line=dict(color='#00CC96', width=2),
+                    ))
+                    fig_pop.update_layout(
+                        title=f"{district} 유동인구 12개월 추이",
+                        height=250, xaxis=dict(type="category", dtick=2),
+                        yaxis_title="명", legend=dict(orientation="h", y=-0.2),
+                    )
+                    st.plotly_chart(fig_pop, use_container_width=True, key="pop_12m")
+            except Exception:
+                pass
+
+            st.markdown("---")
+
+            # 인터넷 신규설치 추이 (전체)
+            try:
+                city_short = city.replace("구", "")
                 install = run_query(f"""
                     SELECT YEAR_MONTH, SUM(OPEN_COUNT) as INSTALLS
                     FROM {AJD}.V05_REGIONAL_NEW_INSTALL
-                    WHERE INSTALL_STATE LIKE '%서울%' AND INSTALL_CITY LIKE '%{city}%'
-                    GROUP BY 1 ORDER BY 1 DESC LIMIT 6
+                    WHERE (INSTALL_CITY LIKE '%{city}%' OR INSTALL_CITY LIKE '%{city_short}%')
+                      AND OPEN_COUNT > 0
+                    GROUP BY 1 ORDER BY 1
                 """)
                 if not install.empty:
-                    install_sorted = install.sort_values("YEAR_MONTH")
                     fig_inst = go.Figure(go.Scatter(
-                        x=install_sorted["YEAR_MONTH"].astype(str),
-                        y=install_sorted["INSTALLS"],
+                        x=install["YEAR_MONTH"].astype(str).tolist(),
+                        y=install["INSTALLS"].tolist(),
                         mode='lines+markers', line=dict(color='#6366F1', width=2),
                         fill='tozeroy', fillcolor='rgba(99,102,241,0.1)',
-                        name='신규설치'
+                        name='신규설치',
+                        hovertemplate='%{x}<br>설치: %{y:,.0f}건<extra></extra>',
                     ))
-                    fig_inst.update_layout(title=f"{city} 인터넷 신규설치 추이", height=220,
-                                           yaxis_title="건수")
+                    fig_inst.update_layout(
+                        title=f"{city} 인터넷 신규설치 추이",
+                        height=250, yaxis_title="건수",
+                        xaxis=dict(type="category", dtick=3),
+                    )
                     st.plotly_chart(fig_inst, use_container_width=True, key="my_install")
-            except Exception:
-                st.caption("인터넷 설치 데이터 오류")
+                else:
+                    st.caption(f"{city} 신규설치 데이터 없음")
+            except Exception as e:
+                st.caption(f"인터넷 설치 데이터 오류: {e}")
 
