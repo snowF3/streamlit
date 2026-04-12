@@ -18,6 +18,8 @@ from data_loader import (
     load_region_master, load_card_sales_agg, load_card_sales_time,
     load_population_agg, load_population_time, load_population_demo,
     load_income_agg, load_realestate, load_hotplace_monthly,
+    load_richgo_population, load_richgo_fertility,
+    run_query, AJD, RICHGO, SPH,
 )
 from charts import (
     spending_radar_chart, population_flow_chart, population_pyramid,
@@ -325,3 +327,87 @@ def render():
                 st.plotly_chart(fig, use_container_width=True, key="job")
         else:
             st.info("소득 데이터 없음")
+
+    # ═══════════════════════════════════════
+    # 인구 구조 (리치고)
+    # ═══════════════════════════════════════
+    with _container(border=True):
+        st.markdown('<div style="font-size:15px; font-weight:700; margin-bottom:4px;">인구 구조</div>', unsafe_allow_html=True)
+        try:
+            richgo_pop = load_richgo_population()
+            # city_kor로 매핑
+            rp = richgo_pop[richgo_pop["SGG"] == city]
+            if not rp.empty:
+                # 전체 구 연령대 분포
+                age_cols = ["AGE_UNDER20", "AGE_20S", "AGE_30S", "AGE_40S", "AGE_50S", "AGE_60S", "AGE_OVER70"]
+                available_cols = [c for c in age_cols if c in rp.columns]
+                if available_cols:
+                    totals = rp[available_cols].sum()
+                    labels = ["20세 미만", "20대", "30대", "40대", "50대", "60대", "70세+"][:len(available_cols)]
+                    fig = go.Figure(go.Bar(x=labels, y=totals.values, marker_color='#8B5CF6'))
+                    fig.update_layout(title=f"{city} 연령대별 인구", height=280)
+                    st.plotly_chart(fig, use_container_width=True, key="age_dist")
+
+                # 영유아/여성 비율
+                fertility = load_richgo_fertility()
+                ft = fertility[fertility["SGG"] == city]
+                if not ft.empty and "AGE_UNDER5_PER_FEMALE_20TO40" in ft.columns:
+                    avg_ratio = ft["AGE_UNDER5_PER_FEMALE_20TO40"].mean()
+                    st.metric("영유아(5세미만)/가임여성(20~40세) 비율", f"{avg_ratio:.3f}")
+                    if avg_ratio > 0.15:
+                        st.caption("💡 영유아 비율 높음 → 정수기/공기청정기 렌탈 수요 높을 가능성")
+                    elif avg_ratio < 0.08:
+                        st.caption("💡 영유아 비율 낮음 → 1인/2인 가구 중심 상권")
+            else:
+                st.caption(f"리치고 인구 데이터: 중구, 영등포구, 서초구만 제공")
+        except Exception as e:
+            st.caption(f"인구 구조 데이터 로드 오류")
+
+    # ═══════════════════════════════════════
+    # 렌탈/인터넷 시장 (아정당)
+    # ═══════════════════════════════════════
+    with _container(border=True):
+        st.markdown('<div style="font-size:15px; font-weight:700; margin-bottom:4px;">렌탈 · 인터넷 시장</div>', unsafe_allow_html=True)
+        try:
+            # 해당 시도의 렌탈 트렌드
+            state_name = "서울"  # 현재 데이터 범위
+            rental = run_query(f"""
+                SELECT RENTAL_SUB_CATEGORY as ITEM,
+                       SUM(CONTRACT_COUNT) as CONTRACTS,
+                       ROUND(AVG(OPEN_CVR), 1) as OPEN_RATE
+                FROM {AJD}.V06_RENTAL_CATEGORY_TRENDS
+                WHERE INSTALL_STATE LIKE '%{state_name}%'
+                  AND YEAR_MONTH = (SELECT MAX(YEAR_MONTH) FROM {AJD}.V06_RENTAL_CATEGORY_TRENDS)
+                GROUP BY 1 ORDER BY CONTRACTS DESC LIMIT 8
+            """)
+            if not rental.empty:
+                fig = go.Figure(go.Bar(
+                    x=rental["CONTRACTS"], y=rental["ITEM"],
+                    orientation='h', marker_color='#F59E0B'
+                ))
+                fig.update_layout(title=f"서울 렌탈 인기 품목 Top 8", height=280,
+                                  yaxis=dict(autorange="reversed"))
+                st.plotly_chart(fig, use_container_width=True, key="rental_local")
+            else:
+                st.caption("렌탈 데이터 없음")
+
+            # 신규 설치 현황
+            install = run_query(f"""
+                SELECT YEAR_MONTH, SUM(OPEN_COUNT) as INSTALLS
+                FROM {AJD}.V05_REGIONAL_NEW_INSTALL
+                WHERE INSTALL_STATE LIKE '%{state_name}%'
+                  AND INSTALL_CITY LIKE '%{city}%'
+                GROUP BY 1 ORDER BY 1 DESC LIMIT 6
+            """)
+            if not install.empty:
+                install_sorted = install.sort_values("YEAR_MONTH")
+                fig2 = go.Figure(go.Scatter(
+                    x=install_sorted["YEAR_MONTH"].astype(str),
+                    y=install_sorted["INSTALLS"],
+                    mode='lines+markers', line=dict(color='#6366F1', width=2),
+                    fill='tozeroy', fillcolor='rgba(99,102,241,0.1)'
+                ))
+                fig2.update_layout(title=f"{city} 인터넷 신규설치 추이", height=250)
+                st.plotly_chart(fig2, use_container_width=True, key="install_trend")
+        except Exception as e:
+            st.caption(f"렌탈/인터넷 데이터 로드 오류")

@@ -13,6 +13,7 @@ from data_loader import (
     load_region_master, load_population_agg, load_card_sales_agg,
     load_card_sales_time, load_population_time, load_population_demo,
     load_income_agg, load_realestate, load_hotplace_monthly,
+    run_query, AJD, SPH,
 )
 from charts import (
     spending_radar_chart, realestate_trend_chart,
@@ -27,6 +28,109 @@ def _container(**kwargs):
         return st.container(**kwargs)
     except TypeError:
         return st.container()
+
+def _render_forecast_cards(pop_agg, card_agg, region_master):
+    """🔮 3개월 전망 예측 카드"""
+    import numpy as np
+
+    st.markdown("### 🔮 3개월 전망")
+
+    months = sorted(pop_agg["STANDARD_YEAR_MONTH"].unique())
+    if len(months) < 3:
+        st.caption("데이터 부족 (3개월 이상 필요)")
+        return
+
+    # 최근 3개월 vs 이전 3개월 방문인구 변화율로 성장/하락 예측
+    recent_3 = months[-3:]
+    prev_3 = months[-6:-3] if len(months) >= 6 else months[:3]
+
+    pop_recent = pop_agg[pop_agg["STANDARD_YEAR_MONTH"].isin(recent_3)].groupby("DISTRICT_CODE").agg({
+        "VISITING_POPULATION": "mean", "RESIDENTIAL_POPULATION": "mean",
+        "WORKING_POPULATION": "mean"
+    }).rename(columns={"VISITING_POPULATION": "visit_r", "RESIDENTIAL_POPULATION": "res_r", "WORKING_POPULATION": "work_r"})
+
+    pop_prev = pop_agg[pop_agg["STANDARD_YEAR_MONTH"].isin(prev_3)].groupby("DISTRICT_CODE").agg({
+        "VISITING_POPULATION": "mean"
+    }).rename(columns={"VISITING_POPULATION": "visit_p"})
+
+    merged = pop_recent.join(pop_prev, how="inner")
+    merged["growth"] = ((merged["visit_r"] - merged["visit_p"]) / merged["visit_p"].replace(0, np.nan) * 100).fillna(0)
+
+    # 카드매출 변화율
+    card_recent = card_agg[card_agg["STANDARD_YEAR_MONTH"].isin(recent_3)]
+    card_prev = card_agg[card_agg["STANDARD_YEAR_MONTH"].isin(prev_3)]
+    if "TOTAL_SALES" in card_recent.columns:
+        cr = card_recent.groupby("DISTRICT_CODE")["TOTAL_SALES"].mean()
+        cp = card_prev.groupby("DISTRICT_CODE")["TOTAL_SALES"].mean()
+        merged["sales_growth"] = ((cr - cp) / cp.replace(0, np.nan) * 100).fillna(0)
+    else:
+        merged["sales_growth"] = 0
+
+    # 종합 점수
+    merged["forecast_score"] = merged["growth"] * 0.6 + merged["sales_growth"] * 0.4
+
+    # 이름 매핑
+    name_map = region_master.set_index("district_code").apply(
+        lambda r: f"{r['city_kor']} {r['district_kor']}", axis=1
+    ).to_dict()
+    merged["name"] = merged.index.map(name_map)
+
+    # 상승 / 주의 / 하락 분류
+    rising = merged[merged["forecast_score"] > 3].nlargest(5, "forecast_score")
+    falling = merged[merged["forecast_score"] < -3].nsmallest(5, "forecast_score")
+    neutral = merged[(merged["forecast_score"] >= -3) & (merged["forecast_score"] <= 3)].head(3)
+
+    c1, c2, c3 = st.columns(3)
+
+    with c1:
+        st.markdown("**🔥 상승 예측**")
+        for _, row in rising.iterrows():
+            st.markdown(f"""<div style="background:rgba(239,68,68,0.1);padding:8px 12px;border-radius:8px;
+                margin:4px 0;border-left:3px solid #EF4444;">
+                <div style="font-size:13px;font-weight:600;">{row['name']}</div>
+                <div style="font-size:11px;color:#EF4444;">+{row['forecast_score']:.1f}점 ↑</div>
+                <div style="font-size:10px;color:#888;">방문 +{row['growth']:.1f}% · 매출 +{row['sales_growth']:.1f}%</div>
+            </div>""", unsafe_allow_html=True)
+
+    with c2:
+        st.markdown("**⚡ 관찰 필요**")
+        for _, row in neutral.iterrows():
+            st.markdown(f"""<div style="background:rgba(245,158,11,0.1);padding:8px 12px;border-radius:8px;
+                margin:4px 0;border-left:3px solid #F59E0B;">
+                <div style="font-size:13px;font-weight:600;">{row['name']}</div>
+                <div style="font-size:11px;color:#F59E0B;">{row['forecast_score']:+.1f}점</div>
+                <div style="font-size:10px;color:#888;">방문 {row['growth']:+.1f}% · 매출 {row['sales_growth']:+.1f}%</div>
+            </div>""", unsafe_allow_html=True)
+
+    with c3:
+        st.markdown("**📉 하락 예측**")
+        for _, row in falling.iterrows():
+            st.markdown(f"""<div style="background:rgba(59,130,246,0.1);padding:8px 12px;border-radius:8px;
+                margin:4px 0;border-left:3px solid #3B82F6;">
+                <div style="font-size:13px;font-weight:600;">{row['name']}</div>
+                <div style="font-size:11px;color:#3B82F6;">{row['forecast_score']:.1f}점 ↓</div>
+                <div style="font-size:10px;color:#888;">방문 {row['growth']:.1f}% · 매출 {row['sales_growth']:.1f}%</div>
+            </div>""", unsafe_allow_html=True)
+
+    # 렌탈 수요 예측
+    st.markdown("---")
+    st.markdown("### 📦 렌탈 수요 시그널")
+    try:
+        rental = run_query(f"""
+            SELECT RENTAL_SUB_CATEGORY as ITEM,
+                   SUM(CONTRACT_COUNT) as CONTRACTS
+            FROM {AJD}.V06_RENTAL_CATEGORY_TRENDS
+            WHERE YEAR_MONTH = (SELECT MAX(YEAR_MONTH) FROM {AJD}.V06_RENTAL_CATEGORY_TRENDS)
+            GROUP BY 1 ORDER BY CONTRACTS DESC LIMIT 5
+        """)
+        if not rental.empty:
+            cols = st.columns(len(rental))
+            for i, (_, row) in enumerate(rental.iterrows()):
+                with cols[i]:
+                    st.metric(row["ITEM"], f"{int(row['CONTRACTS']):,}건")
+    except Exception:
+        st.caption("렌탈 데이터 로드 오류")
+
 
 def render():
     # ── CSS ──
@@ -55,6 +159,16 @@ def render():
     pop_agg = load_population_agg()
     card_agg = load_card_sales_agg()
     hp = load_hotplace_monthly()
+
+    # ══════════════════════════════════════
+    # 🔮 예측 카드 섹션 (최상단)
+    # ══════════════════════════════════════
+    try:
+        _render_forecast_cards(pop_agg, card_agg, region_master)
+    except Exception:
+        pass
+
+    st.markdown("---")
 
     data_districts = set(hp["DISTRICT_CODE"].unique())
     rm = region_master[region_master["district_code"].isin(data_districts)].copy()
