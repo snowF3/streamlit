@@ -331,12 +331,28 @@ def render():
     with col_mid:
         # 동네 검색 + 날짜 같은 행
         mid_nb_col, mid_ym_col = st.columns([3, 2])
-        with mid_nb_col:
-            mid_district = st.selectbox("동네 검색", district_options, index=0, label_visibility="collapsed", key="mid_district_sel")
         with mid_ym_col:
             selected_ym_label = st.selectbox("기준 년월", ym_labels, index=0, label_visibility="collapsed")
 
     selected_ym = all_ym[ym_labels.index(selected_ym_label)]
+
+    # 상위3+하위3 고정 상단 옵션
+    month_hp_sorted = hp[hp["STANDARD_YEAR_MONTH"] == selected_ym].sort_values("hotplace_score", ascending=False)
+    if not month_hp_sorted.empty:
+        top3 = month_hp_sorted.head(3)
+        bot3 = month_hp_sorted.tail(3)
+        top_bot = pd.concat([top3, bot3]).drop_duplicates(subset="DISTRICT_CODE")
+        top_bot_labels = [f"{r['name']}" for _, r in top_bot.iterrows()]
+        rest_labels = [o for o in district_options if o not in top_bot_labels]
+        mid_options = top_bot_labels + ["───────────"] + rest_labels
+    else:
+        mid_options = district_options
+
+    with col_mid:
+        with mid_nb_col:
+            mid_district = st.selectbox("동네 검색", mid_options, index=0, label_visibility="collapsed", key="mid_district_sel")
+            if mid_district == "───────────":
+                mid_district = mid_options[0]
 
     # 선택된 월 시그널만 (해당 월만)
     signals = get_signals_for_month(hp, selected_ym)
@@ -451,6 +467,8 @@ def render():
             st.markdown(f'<ul style="padding-left:18px; margin:6px 0 0;">{reasons_html}</ul>', unsafe_allow_html=True)
 
         st.markdown("")  # 불릿↔키워드 여백
+        st.markdown("")
+        st.markdown("")
         kw_html = "".join(f'<span class="kw-tag">{kw}</span>' for kw in sig["keywords"])
         st.markdown(kw_html, unsafe_allow_html=True)
         st.markdown("")  # 키워드 아래 여백
@@ -674,9 +692,9 @@ def render():
                         ))
                         fig_trend.add_vline(x=curr_label, line_dash="dot", line_color="rgba(240,68,82,0.3)")
                     fig_trend.update_layout(
-                        height=100, margin=dict(l=0, r=0, t=3, b=3),
-                        xaxis=dict(showgrid=False, tickfont=dict(size=8)),
-                        yaxis=dict(showgrid=False, showticklabels=False),
+                        height=130, margin=dict(l=0, r=0, t=5, b=5),
+                        xaxis=dict(showgrid=False, tickfont=dict(size=7)),
+                        yaxis=dict(showgrid=False, showticklabels=True, tickfont=dict(size=7)),
                         hovermode="x unified", showlegend=False,
                     )
                     st.plotly_chart(fig_trend, use_container_width=True, key="my_trend")
