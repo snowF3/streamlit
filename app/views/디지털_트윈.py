@@ -71,92 +71,43 @@ def render():
     data_districts = set(pop_agg["DISTRICT_CODE"].unique())
     centroids = centroids[centroids["district_code"].isin(data_districts)].copy()
 
-    # 기준 년월 (컨트롤 바에서 선택, 여기서는 목록만 준비)
+    # 기준 년월
     all_months = sorted(pop_agg["STANDARD_YEAR_MONTH"].unique(), reverse=True)
+    selected_month = all_months[0]
 
-    # 파생지표 계산 함수 (캐싱) — 컨트롤 바에서 기준 년월 선택 후 호출
+    # 파생지표 계산 (캐싱)
     @st.cache_data(ttl=3600)
     def _calc_derived(_pop_time, _card_agg, _pop_agg, _income_agg, year_month):
         return calc_derived_metrics(_pop_time, _card_agg, _pop_agg, _income_agg, year_month)
 
-    # ── 3개월 전망 카드 (제목 + ❓ 가이드 통합) ──
-    st.markdown("""
-    <style>
-    .forecast-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-    .forecast-header h3 { margin: 0; padding: 0; font-size: 1.2em; }
-    .score-help-wrap { position: relative; display: inline-block; }
-    .score-help-btn {
-        font-size: 14px; cursor: help; opacity: 0.4;
-        transition: opacity 0.2s;
-    }
-    .score-help-btn:hover { opacity: 1; }
-    .score-help-popup {
-        visibility: hidden; opacity: 0;
-        position: absolute; left: 0; top: 100%; margin-top: 6px; z-index: 9999;
-        width: 420px; padding: 16px 18px;
-        background: white; border: 1px solid #e0e0e0; border-radius: 12px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.12);
-        font-size: 12px; line-height: 1.7; color: #333;
-        transition: opacity 0.2s, visibility 0.2s;
-    }
-    .score-help-wrap:hover .score-help-popup { visibility: visible; opacity: 1; }
-    .score-help-popup h4 { font-size: 13px; font-weight: 700; margin: 0 0 8px; color: #333; }
-    .score-help-popup .formula {
-        background: #f8f7ff; border: 1px solid #e8e6ff; border-radius: 6px;
-        padding: 6px 10px; font-family: monospace; font-size: 11px; color: #6366F1;
-        margin-bottom: 10px;
-    }
-    .score-help-popup table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
-    .score-help-popup th {
-        text-align: left; font-size: 11px; font-weight: 600; color: #666;
-        border-bottom: 1px solid #eee; padding: 4px 6px;
-    }
-    .score-help-popup td { font-size: 11px; padding: 4px 6px; border-bottom: 1px solid #f5f5f5; }
-    .score-help-popup .warn {
-        background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px;
-        padding: 6px 10px; font-size: 11px; color: #92400e; margin-top: 8px;
-    }
-    </style>
-    <div class="forecast-header">
-        <h3>🔮 3개월 전망</h3>
-        <div class="score-help-wrap">
-            <span class="score-help-btn">❓</span>
-            <div class="score-help-popup">
-                <h4>3개월 전망 점수 산정</h4>
-                <div class="formula">전망 점수 = 방문인구 변화율 × 60% + 카드매출 변화율 × 40%</div>
-                <table>
-                    <tr><th>지표</th><th>가중치</th><th>소스</th></tr>
-                    <tr><td>방문인구 변화율</td><td><b>60%</b></td><td>SPH 유동인구</td></tr>
-                    <tr><td>카드매출 변화율</td><td><b>40%</b></td><td>SPH 카드매출</td></tr>
-                </table>
-                <div style="font-size:11px; color:#555;">
-                    📅 <b>비교 기간</b>: 최근 3개월 평균 vs 이전 3개월 평균<br>
-                    📊 <b>분류</b>: +3점↑ 🔥상승 &nbsp;│&nbsp; ±3점 ⚡관찰 &nbsp;│&nbsp; -3점↓ 📉하락
-                </div>
-                <div class="warn">
-                    ⚠️ 인사이트 탭의 <b>핫플 점수</b>와는 다른 간소화 지표입니다.<br>
-                    핫플 점수는 5개 지표(방문인구·카페매출·유동인구·매매가·신규설치)를 사용합니다.
-                </div>
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    derived = _calc_derived(pop_time, card_agg, pop_agg, income_agg, selected_month)
 
+    # ── 3개월 전망 카드 ──
     try:
         from views.인사이트_피드 import _render_forecast_cards
-        _render_forecast_cards(pop_agg, card_agg, region_master, show_title=False)
+        _render_forecast_cards(pop_agg, card_agg, region_master)
     except Exception:
         pass
 
+    with st.expander("ℹ️ 점수 산정 방식"):
+        st.markdown("최근 3개월 vs 이전 3개월의 **방문인구 변화율(60%)** + **카드매출 변화율(40%)**을 종합한 점수입니다. 인사이트 탭의 핫플 점수와 동일한 기준입니다.")
+
     st.markdown("---")
 
-    # 클러스터링 함수 (캐싱) — 컨트롤 바에서 기준 년월 선택 후 호출
+    # 클러스터링 (캐싱)
     @st.cache_data(ttl=3600)
     def _compute_clusters(_pop_time, _card_agg, _pop_demo, _derived, _year_month):
         fm = build_feature_matrix(_derived, _card_agg, _pop_demo, _pop_time, _year_month)
         labels, model, scaler = run_clustering(fm)
         type_map = classify_district_type(fm, labels)
         return fm, labels, type_map
+
+    try:
+        feature_matrix, cluster_labels, cluster_type_map = _compute_clusters(
+            pop_time, card_agg, pop_demo, derived, selected_month
+        )
+    except Exception:
+        feature_matrix, cluster_labels, cluster_type_map = pd.DataFrame(), pd.Series(dtype=int), {}
 
     # 이름 매핑 (전역)
     name_map = centroids.set_index("district_code")["name"].to_dict()
@@ -167,14 +118,7 @@ def render():
     time_slots = list(TIME_SLOT_KOR.keys())
     time_labels = list(TIME_SLOT_KOR.values())
 
-    ctrl0, ctrl1, ctrl2, ctrl3 = st.columns([1, 2, 1, 1])
-    with ctrl0:
-        _month_fmt = {m: f"{str(m)[:4]}.{str(m)[4:]}" for m in all_months}
-        selected_month = st.selectbox(
-            "기준 년월", all_months,
-            format_func=lambda m: _month_fmt[m],
-            index=0, key="twin_month_sel",
-        )
+    ctrl1, ctrl2, ctrl3 = st.columns([2, 1, 1])
     with ctrl1:
         selected_time_label = st.select_slider(
             "시간대", options=time_labels, value="점심(12~15)")
@@ -185,16 +129,6 @@ def render():
     with ctrl3:
         metric_options = ["총유동인구", "방문인구", "1인당매출", "낮밤인구비", "클러스터"]
         selected_metric = st.selectbox("지표 선택", metric_options)
-
-    # ── 파생지표 & 클러스터링 계산 (기준 년월에 따라) ──
-    derived = _calc_derived(pop_time, card_agg, pop_agg, income_agg, selected_month)
-
-    try:
-        feature_matrix, cluster_labels, cluster_type_map = _compute_clusters(
-            pop_time, card_agg, pop_demo, derived, selected_month
-        )
-    except Exception:
-        feature_matrix, cluster_labels, cluster_type_map = pd.DataFrame(), pd.Series(dtype=int), {}
 
     # ══════════════════════════════════════
     # 시간대별 데이터 필터링 (캐싱)
@@ -280,8 +214,6 @@ def render():
         st.subheader(f"서울 법정동 — {selected_metric} ({selected_time_label}, {weekday_label})")
 
         geojson_data = load_geojson()
-        active_dc_set = set(data_districts)
-
         if sel_col == "cluster":
             cl_color_map = {}
             for _, row in column_df.iterrows():
@@ -289,113 +221,45 @@ def render():
                     "fill_color": row["fill_color"],
                     "metric_value": row["metric_value"],
                 }
-            active_features = []
             for feat in geojson_data["features"]:
                 dc = feat["properties"]["district_code"]
-                if dc not in active_dc_set:
-                    continue  # 비활성 법정동 제거
-                info = cl_color_map.get(dc, {"fill_color": [128, 128, 128, 160], "metric_value": "데이터 없음"})
+                info = cl_color_map.get(dc, {"fill_color": [80, 80, 80, 40], "metric_value": "데이터 없음"})
                 feat["properties"]["fill_color"] = info["fill_color"]
                 feat["properties"]["metric_value"] = info["metric_value"]
-                # pydeck tooltip은 top-level 속성만 참조 → 복사
-                feat["name"] = feat["properties"]["name"]
-                feat["metric_value"] = str(info["metric_value"])
-                active_features.append(feat)
         else:
             norm_map = column_df.set_index("district_code")[["norm", "metric_value"]].to_dict("index")
-            active_features = []
             for feat in geojson_data["features"]:
                 dc = feat["properties"]["district_code"]
-                if dc not in active_dc_set:
-                    continue  # 비활성 법정동 제거
                 info = norm_map.get(dc, None)
                 if info is None:
-                    continue  # 데이터 없는 법정동도 제거
+                    # 데이터 없는 법정동 → 비활성화 (투명 회색)
+                    feat["properties"]["metric_value"] = "데이터 없음"
+                    feat["properties"]["fill_color"] = [80, 80, 80, 40]
+                    continue
                 n = info["norm"]
                 feat["properties"]["metric_value"] = info["metric_value"]
                 r, g, b = 255, int(255 * (1 - n * 0.8)), int(255 * (1 - n))
                 a = int(120 + n * 100)
                 feat["properties"]["fill_color"] = [r, g, b, a]
-                # pydeck tooltip은 top-level 속성만 참조 → 복사
-                feat["name"] = feat["properties"]["name"]
-                feat["metric_value"] = str(info["metric_value"])
-                active_features.append(feat)
-
-        geojson_data["features"] = active_features
-
-        # 활성 법정동 bounds 계산 → ViewState 자동 맞춤
-        _all_lons, _all_lats = [], []
-        for feat in active_features:
-            coords = feat["geometry"].get("coordinates", [])
-            gtype = feat["geometry"]["type"]
-            if gtype == "MultiPolygon":
-                for poly in coords:
-                    if poly:
-                        for pt in poly[0]:
-                            _all_lons.append(pt[0])
-                            _all_lats.append(pt[1])
-            elif gtype == "Polygon":
-                if coords:
-                    for pt in coords[0]:
-                        _all_lons.append(pt[0])
-                        _all_lats.append(pt[1])
-
-        if _all_lons and _all_lats:
-            _center_lat = (min(_all_lats) + max(_all_lats)) / 2
-            _center_lon = (min(_all_lons) + max(_all_lons)) / 2
-            # 범위에 따라 줌 레벨 자동 계산
-            _lat_range = max(_all_lats) - min(_all_lats)
-            _lon_range = max(_all_lons) - min(_all_lons)
-            _max_range = max(_lat_range, _lon_range)
-            if _max_range > 0.3:
-                _auto_zoom = 10.5
-            elif _max_range > 0.15:
-                _auto_zoom = 11.5
-            elif _max_range > 0.05:
-                _auto_zoom = 12.5
-            else:
-                _auto_zoom = 13.5
-        else:
-            _center_lat, _center_lon, _auto_zoom = 37.51, 126.95, 11.5
 
         layer = pdk.Layer(
             "GeoJsonLayer",
             data=geojson_data,
             get_fill_color="properties.fill_color",
-            get_line_color=[60, 60, 60, 200],
+            get_line_color=[80, 80, 80, 160],
             line_width_min_pixels=1,
             pickable=True,
             auto_highlight=True,
-            highlight_color=[255, 200, 0, 120],
             stroked=True,
         )
         view = pdk.ViewState(
-            latitude=_center_lat,
-            longitude=_center_lon,
-            zoom=_auto_zoom,
-            min_zoom=max(_auto_zoom - 2, 9),
-            max_zoom=min(_auto_zoom + 3, 16),
-            pitch=0,
-            bearing=0,
+            latitude=37.51, longitude=126.95, zoom=11.5,
+            pitch=0, bearing=0,
         )
         deck = pdk.Deck(
             layers=[layer],
             initial_view_state=view,
-            tooltip={
-                "html": '<div style="padding:6px 10px;font-family:sans-serif;">'
-                        '<div style="font-size:14px;font-weight:700;margin-bottom:4px;">'
-                        '{name}</div>'
-                        '<div style="font-size:12px;color:#555;">'
-                        f'{selected_metric}: '
-                        '<b>{metric_value}</b></div></div>',
-                "style": {
-                    "backgroundColor": "white",
-                    "color": "#333",
-                    "borderRadius": "8px",
-                    "boxShadow": "0 2px 8px rgba(0,0,0,0.15)",
-                    "border": "1px solid #e0e0e0",
-                },
-            },
+            tooltip={"text": "{name}\n" + f"{selected_metric}: " + "{metric_value}"},
             map_provider="carto",
             map_style="light",
         )
@@ -430,26 +294,7 @@ def render():
                 hhi_val = dm['consumption_hhi']
                 hhi_label = "다양" if hhi_val < 0.05 else ("보통" if hhi_val < 0.15 else "편중")
                 st.metric("소비집중도(HHI)", f"{hhi_val:.3f} ({hhi_label})")
-                st.markdown("""
-                <div class="score-help-wrap" style="margin-top:-6px;">
-                    <span class="score-help-btn">❓</span>
-                    <div class="score-help-popup" style="width:340px;">
-                        <h4>HHI (허핀달-허쉬만 지수)</h4>
-                        <div style="font-size:11px;color:#555;margin-bottom:8px;">
-                            업종별 카드매출 집중도를 측정합니다.<br>
-                            각 업종 매출 비중의 <b>제곱합</b>으로 계산됩니다.
-                        </div>
-                        <div class="formula">HHI = Σ (업종별 매출 / 전체 매출)²</div>
-                        <table>
-                            <tr><th>HHI 값</th><th>판정</th><th>의미</th></tr>
-                            <tr><td>&lt; 0.05</td><td><b>다양</b></td><td>매출이 여러 업종에 골고루 분산</td></tr>
-                            <tr><td>0.05 ~ 0.15</td><td><b>보통</b></td><td>일반적인 수준</td></tr>
-                            <tr><td>&gt; 0.15</td><td><b>편중</b></td><td>특정 업종에 매출 쏠림</td></tr>
-                        </table>
-                        <div style="font-size:10px;color:#888;">데이터: SPH 카드매출 19개 업종 기준</div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+                st.caption("HHI(허핀달-허쉬만 지수): 업종별 매출 집중도. 0에 가까울수록 다양한 소비, 1에 가까울수록 특정 업종 편중")
 
             # 클러스터 태그 표시
             if top_code in cluster_labels.index:
@@ -463,7 +308,38 @@ def render():
                     unsafe_allow_html=True,
                 )
 
-
+            # 미니 시간대별 차트
+            dc_time_all = pop_time[
+                (pop_time["STANDARD_YEAR_MONTH"] == selected_month)
+                & (pop_time["WEEKDAY_WEEKEND"] == weekday_code)
+                & (pop_time["DISTRICT_CODE"] == top_code)
+            ].copy()
+            if not dc_time_all.empty:
+                dc_time_all["total"] = (dc_time_all["RESIDENTIAL_POPULATION"]
+                                        + dc_time_all["WORKING_POPULATION"]
+                                        + dc_time_all["VISITING_POPULATION"])
+                dc_chart = dc_time_all.set_index("TIME_SLOT").reindex(time_slots)
+                dc_chart["시간대"] = [TIME_SLOT_KOR.get(t, t) for t in dc_chart.index]
+                fig_mini = go.Figure()
+                fig_mini.add_trace(go.Scatter(
+                    x=dc_chart["시간대"], y=dc_chart["RESIDENTIAL_POPULATION"],
+                    name="거주", fill="tozeroy", line=dict(width=1),
+                ))
+                fig_mini.add_trace(go.Scatter(
+                    x=dc_chart["시간대"], y=dc_chart["WORKING_POPULATION"],
+                    name="직장", fill="tonexty", line=dict(width=1),
+                ))
+                fig_mini.add_trace(go.Scatter(
+                    x=dc_chart["시간대"], y=dc_chart["VISITING_POPULATION"],
+                    name="방문", fill="tonexty", line=dict(width=1),
+                ))
+                fig_mini.update_layout(
+                    height=200, margin=dict(l=0, r=0, t=20, b=0),
+                    showlegend=True, legend=dict(orientation="h", y=-0.3),
+                    xaxis=dict(tickfont=dict(size=9)),
+                    yaxis=dict(tickfont=dict(size=9)),
+                )
+                st.plotly_chart(fig_mini, use_container_width=True)
 
         elif sel_col == "cluster" and not column_df.empty:
             # 클러스터 모드: 각 클러스터별 동네 수 표시
@@ -481,13 +357,86 @@ def render():
                         unsafe_allow_html=True,
                     )
 
+    # ══════════════════════════════════════
+    # [C] 분석 패널: 히트맵 + 주중/주말 비교
+    # ══════════════════════════════════════
+    st.divider()
+    anal_col1, anal_col2 = st.columns(2)
+
+    with anal_col1:
+        st.subheader("🔥 시간대별 유동인구 히트맵")
+
+        @st.cache_data(ttl=3600)
+        def _heatmap_pivot(_pop_time, year_month, wk_code, slot_order):
+            pt = _pop_time[
+                (_pop_time["STANDARD_YEAR_MONTH"] == year_month)
+                & (_pop_time["WEEKDAY_WEEKEND"] == wk_code)
+            ].copy()
+            pt["total"] = pt["RESIDENTIAL_POPULATION"] + pt["WORKING_POPULATION"] + pt["VISITING_POPULATION"]
+            dc_total = pt.groupby("DISTRICT_CODE")["total"].sum().nlargest(20)
+            top20 = dc_total.index.tolist()
+            pv = pt[pt["DISTRICT_CODE"].isin(top20)].pivot_table(
+                index="DISTRICT_CODE", columns="TIME_SLOT", values="total", aggfunc="sum"
+            )
+            ordered = [s for s in slot_order if s in pv.columns]
+            return pv.reindex(columns=ordered).fillna(0).reindex(top20), top20
+
+        pivot, top20_codes = _heatmap_pivot(pop_time, selected_month, weekday_code, tuple(time_slots))
+
+        pivot.index = [name_map.get(dc, dc) for dc in pivot.index]
+        pivot.columns = [TIME_SLOT_KOR.get(s, s) for s in pivot.columns]
+
+        fig_heat = px.imshow(
+            pivot, aspect="auto",
+            color_continuous_scale="YlOrRd",
+            labels=dict(x="시간대", y="동네", color="유동인구"),
+        )
+        fig_heat.update_layout(height=450, margin=dict(l=0, r=0, t=10, b=0))
+        st.plotly_chart(fig_heat, use_container_width=True)
+
+    with anal_col2:
+        st.subheader("📊 주중 vs 주말 비교 (Top 10)")
+
+        @st.cache_data(ttl=3600)
+        def _weekday_weekend_compare(_pop_time, year_month):
+            pt = _pop_time[_pop_time["STANDARD_YEAR_MONTH"] == year_month].copy()
+            pt["total"] = pt["RESIDENTIAL_POPULATION"] + pt["WORKING_POPULATION"] + pt["VISITING_POPULATION"]
+            return pt.groupby(["DISTRICT_CODE", "WEEKDAY_WEEKEND"])["total"].sum().unstack(fill_value=0)
+
+        wk_vs_we = _weekday_weekend_compare(pop_time, selected_month)
+
+        if "W" in wk_vs_we.columns and "H" in wk_vs_we.columns:
+            wk_vs_we["합계"] = wk_vs_we["W"] + wk_vs_we["H"]
+            top10_codes = wk_vs_we.nlargest(10, "합계").index.tolist()
+            top10_data = wk_vs_we.loc[top10_codes].copy()
+            top10_data["name"] = [name_map.get(dc, dc) for dc in top10_data.index]
+
+            fig_comp = go.Figure()
+            fig_comp.add_trace(go.Bar(
+                name="주중", x=top10_data["name"], y=top10_data["W"],
+                marker_color="#6366F1",
+            ))
+            fig_comp.add_trace(go.Bar(
+                name="주말", x=top10_data["name"], y=top10_data["H"],
+                marker_color="#F59E0B",
+            ))
+            fig_comp.update_layout(
+                barmode="group", height=450,
+                margin=dict(l=50, r=10, t=10, b=80),
+                legend=dict(orientation="h", y=1.05),
+                xaxis=dict(title="동네", tickangle=-45, tickfont=dict(size=9)),
+                yaxis=dict(title="유동인구(명)", tickfont=dict(size=9)),
+            )
+            st.plotly_chart(fig_comp, use_container_width=True)
+        else:
+            st.info("주중/주말 비교 데이터가 부족합니다.")
 
     # ══════════════════════════════════════
     # [D] 하단 탭
     # ══════════════════════════════════════
     st.divider()
     tab_insight, tab_sim, tab_persona, tab_ai, tab_cortex = st.tabs([
-        "📈 현황 인사이트", "🧪 what-if",
+        "📈 현황 인사이트", "🧪 출점 시뮬레이션",
         "👤 페르소나", "🤖 AI 예측", "🔮 Cortex 전망"
     ])
 
@@ -521,35 +470,9 @@ def render():
                 top5_hhi.columns = ["소비집중도"]
                 st.dataframe(top5_hhi, use_container_width=True)
 
-    # ── 탭2: What-if 시뮬레이션 ──
+    # ── 탭2: What-if 시뮬레이션 (Phase 2 고도화) ──
     with tab_sim:
-        # ── 사용 가이드 ──
-        st.markdown("""
-        <div style="background:linear-gradient(135deg,#f8f7ff,#eef2ff);border:1px solid #e0e7ff;
-                    border-radius:12px;padding:16px 20px;margin-bottom:16px;">
-            <div style="font-size:15px;font-weight:700;color:#4338CA;margin-bottom:10px;">
-                🧪 What-if 시뮬레이션
-            </div>
-            <div style="font-size:12px;color:#555;line-height:1.8;">
-                특정 동네에 가게를 열었을 때 <b>예상 월매출</b>을 추정합니다.<br>
-                유동인구·소득수준·업종경쟁도 등 실제 데이터를 기반으로 계산됩니다.
-            </div>
-            <div style="display:flex;gap:16px;margin-top:12px;">
-                <div style="flex:1;background:white;border-radius:8px;padding:10px 12px;text-align:center;border:1px solid #e8e6ff;">
-                    <div style="font-size:18px;">①</div>
-                    <div style="font-size:11px;color:#666;margin-top:2px;">구·동 선택</div>
-                </div>
-                <div style="flex:1;background:white;border-radius:8px;padding:10px 12px;text-align:center;border:1px solid #e8e6ff;">
-                    <div style="font-size:18px;">②</div>
-                    <div style="font-size:11px;color:#666;margin-top:2px;">업종·임대료 설정</div>
-                </div>
-                <div style="flex:1;background:white;border-radius:8px;padding:10px 12px;text-align:center;border:1px solid #e8e6ff;">
-                    <div style="font-size:18px;">③</div>
-                    <div style="font-size:11px;color:#666;margin-top:2px;">결과 확인·비교</div>
-                </div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown("**🧪 출점 시뮬레이션** — 동네를 선택하고, 업종과 조건을 설정하면 유동인구·소득·경쟁 데이터를 기반으로 예상 월매출을 계산합니다.")
 
         # 시뮬레이션 히스토리 초기화
         if "sim_history" not in st.session_state:
@@ -560,23 +483,20 @@ def render():
         district_labels = district_list["name"].tolist()
         district_codes = district_list["district_code"].tolist()
 
-        # ── 구/동 분리 선택 (form 바깥 → 동적 필터링) ──
-        loc_col, opt_col = st.columns(2)
-        with loc_col:
-            gu_list = sorted(set(n.split(" ")[0] for n in district_labels))
-            sim_gu = st.selectbox("📍 구 선택", gu_list, key="sim_gu")
-            dong_in_gu = [n for n in district_labels if n.startswith(sim_gu)]
-            sim_district_label = st.selectbox(
-                "📍 동 선택",
-                dong_in_gu,
-                key="sim_dong",
-                help="선택한 구에 포함된 법정동만 표시됩니다."
-            )
-        with opt_col:
-            sim_industry = st.selectbox("🏪 업종", list(INDUSTRY_PARAMS.keys()))
-            sim_rent = st.slider("💳 예상 월 임대료 (만원)", 100, 2000, 500, step=50)
+        with st.form("sim_form"):
+            sf1, sf2 = st.columns(2)
+            with sf1:
+                # 구/동 분리 선택
+                gu_list = sorted(set(n.split(" ")[0] for n in district_labels))
+                sim_gu = st.selectbox("구 선택", gu_list)
+                dong_in_gu = [n for n in district_labels if n.startswith(sim_gu)]
+                sim_district_label = st.selectbox("동 선택", dong_in_gu)
+            with sf2:
+                sim_industry = st.selectbox("업종", list(INDUSTRY_PARAMS.keys()))
+                sim_rent = st.slider("예상 월 임대료(만원)", 100, 2000, 500, step=50)
+            submitted = st.form_submit_button("🚀 시뮬레이션 실행", use_container_width=True)
 
-        if st.button("🚀 시뮬레이션 실행", use_container_width=True, type="primary"):
+        if submitted:
             sim_dc = district_codes[district_labels.index(sim_district_label)]
             engine = get_engine("statistical")
             result = engine.simulate(
@@ -609,36 +529,18 @@ def render():
             st.markdown("---")
             st.markdown(f"##### {latest['district']} · {latest['industry']} · 임대료 {latest['rent']:,}만원")
 
-            # ── 한국 원화 포맷 헬퍼 ──
-            def _fmt_krw(val_man):
-                """만원 단위 값을 한국식으로 포맷 (예: 56900 → '5억 6,900만원')"""
-                if val_man >= 10000:
-                    eok = val_man // 10000
-                    remainder = val_man % 10000
-                    if remainder > 0:
-                        return f"{eok}억 {remainder:,}만원"
-                    return f"{eok}억원"
-                return f"{val_man:,}만원"
-
             r1, r2, r3 = st.columns(3)
 
             with r1:
                 st.markdown("##### 💰 예상 월매출")
-                st.markdown(
-                    f'<div style="text-align:center;padding:12px 0;">'
-                    f'<div style="font-size:28px;font-weight:700;color:#6366F1;">'
-                    f'{_fmt_krw(result.monthly_revenue_mid)}</div>'
-                    f'<div style="font-size:12px;color:#888;margin-top:4px;">중간 추정</div>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
                 # Gauge chart
                 fig_gauge = go.Figure(go.Indicator(
-                    mode="gauge+delta",
+                    mode="gauge+number+delta",
                     value=result.monthly_revenue_mid,
-                    delta={"reference": latest["rent"], "relative": False, "valueformat": ",", "suffix": "만원"},
+                    number={"suffix": "만원"},
+                    delta={"reference": latest["rent"], "relative": False, "valueformat": ","},
                     gauge={
-                        "axis": {"range": [0, max(result.monthly_revenue_high * 1.5, 1)], "tickformat": ","},
+                        "axis": {"range": [0, max(result.monthly_revenue_high * 1.5, 1)]},
                         "bar": {"color": "#6366F1"},
                         "steps": [
                             {"range": [0, result.monthly_revenue_low], "color": "#fef3c7"},
@@ -650,10 +552,11 @@ def render():
                             "value": latest["rent"],
                         },
                     },
+                    title={"text": "중간 추정"},
                 ))
-                fig_gauge.update_layout(height=200, margin=dict(l=20, r=20, t=20, b=10))
+                fig_gauge.update_layout(height=250, margin=dict(l=20, r=20, t=40, b=10))
                 st.plotly_chart(fig_gauge, use_container_width=True)
-                st.caption(f"범위: {_fmt_krw(result.monthly_revenue_low)} ~ {_fmt_krw(result.monthly_revenue_high)}")
+                st.caption(f"범위: {result.monthly_revenue_low:,} ~ {result.monthly_revenue_high:,}만원")
 
             with r2:
                 st.markdown("##### ⏰ 피크 시간대 & 고객층")
@@ -689,105 +592,41 @@ def render():
 
             st.caption("⚠️ 통계 기반 추정치이며, 실제 매출과 차이가 있을 수 있습니다.")
 
-            # ══════════════════════════════════════
-            # 시뮬레이션 비교 (자연스럽고 직관적인 UX)
-            # ══════════════════════════════════════
-            hist_count = len(st.session_state.sim_history)
-            if hist_count == 1:
-                # 첫 시뮬레이션 → 비교 유도 넛지
-                st.markdown("""
-                <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;
-                            padding:12px 16px;margin-top:8px;display:flex;align-items:center;gap:10px;">
-                    <div style="font-size:24px;">💡</div>
-                    <div style="font-size:12px;color:#166534;line-height:1.6;">
-                        <b>다른 동네나 업종</b>으로 한 번 더 실행해보세요!<br>
-                        자동으로 <b>비교 분석</b>이 나타나서 한눈에 비교할 수 있습니다.
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-
-            elif hist_count >= 2:
+            # ── 시뮬레이션 히스토리 비교 ──
+            st.info("💡 다른 동네나 업종으로 시뮬레이션을 여러 번 실행하면 자동으로 비교 테이블이 생성됩니다.")
+            if len(st.session_state.sim_history) >= 2:
                 st.markdown("---")
                 st.markdown("##### 📊 시뮬레이션 비교")
-                st.caption("실행한 시뮬레이션 결과를 나란히 비교합니다. 드롭다운으로 비교 대상을 변경할 수 있습니다.")
 
+                # 최근 2개 비교
                 hist = st.session_state.sim_history
-                compare_options = [f"{h['district']} · {h['industry']} (임대료 {h['rent']:,}만원)" for h in hist]
+                compare_options = [f"{h['district']} · {h['industry']}" for h in hist]
 
                 cmp_col1, cmp_col2 = st.columns(2)
                 with cmp_col1:
-                    cmp_idx1 = st.selectbox("🅰️ 비교 대상 A", range(len(hist)),
+                    cmp_idx1 = st.selectbox("비교 A", range(len(hist)),
                                             format_func=lambda i: compare_options[i],
                                             index=len(hist) - 2, key="cmp_a")
                 with cmp_col2:
-                    cmp_idx2 = st.selectbox("🅱️ 비교 대상 B", range(len(hist)),
+                    cmp_idx2 = st.selectbox("비교 B", range(len(hist)),
                                             format_func=lambda i: compare_options[i],
                                             index=len(hist) - 1, key="cmp_b")
 
                 h1, h2 = hist[cmp_idx1], hist[cmp_idx2]
-                res1, res2 = h1["result"], h2["result"]
+                r1, r2 = h1["result"], h2["result"]
 
-                # 비교 카드 UI
-                card1, card2 = st.columns(2)
-                with card1:
-                    profit1 = res1.monthly_revenue_mid - h1["rent"]
-                    profit_color1 = "#16a34a" if profit1 > 0 else "#dc2626"
-                    st.markdown(f"""
-                    <div style="border:2px solid #6366F1;border-radius:12px;padding:16px;background:#fafafe;">
-                        <div style="font-size:13px;font-weight:700;color:#6366F1;margin-bottom:8px;">
-                            🅰️ {h1['district']} · {h1['industry']}
-                        </div>
-                        <div style="font-size:11px;color:#888;margin-bottom:12px;">임대료 {h1['rent']:,}만원</div>
-                        <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
-                            <span style="font-size:11px;color:#666;">예상 월매출</span>
-                            <span style="font-size:13px;font-weight:700;">{_fmt_krw(res1.monthly_revenue_mid)}</span>
-                        </div>
-                        <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
-                            <span style="font-size:11px;color:#666;">예상 수익</span>
-                            <span style="font-size:13px;font-weight:700;color:{profit_color1};">{_fmt_krw(profit1)}</span>
-                        </div>
-                        <div style="display:flex;justify-content:space-between;">
-                            <span style="font-size:11px;color:#666;">경쟁 강도</span>
-                            <span style="font-size:13px;">{res1.competition_index:.2f}</span>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-
-                with card2:
-                    profit2 = res2.monthly_revenue_mid - h2["rent"]
-                    profit_color2 = "#16a34a" if profit2 > 0 else "#dc2626"
-                    st.markdown(f"""
-                    <div style="border:2px solid #F59E0B;border-radius:12px;padding:16px;background:#fffefb;">
-                        <div style="font-size:13px;font-weight:700;color:#d97706;margin-bottom:8px;">
-                            🅱️ {h2['district']} · {h2['industry']}
-                        </div>
-                        <div style="font-size:11px;color:#888;margin-bottom:12px;">임대료 {h2['rent']:,}만원</div>
-                        <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
-                            <span style="font-size:11px;color:#666;">예상 월매출</span>
-                            <span style="font-size:13px;font-weight:700;">{_fmt_krw(res2.monthly_revenue_mid)}</span>
-                        </div>
-                        <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
-                            <span style="font-size:11px;color:#666;">예상 수익</span>
-                            <span style="font-size:13px;font-weight:700;color:{profit_color2};">{_fmt_krw(profit2)}</span>
-                        </div>
-                        <div style="display:flex;justify-content:space-between;">
-                            <span style="font-size:11px;color:#666;">경쟁 강도</span>
-                            <span style="font-size:13px;">{res2.competition_index:.2f}</span>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-
-                # 승자 표시
-                if profit1 != profit2:
-                    winner = h1 if profit1 > profit2 else h2
-                    st.markdown(f"""
-                    <div style="text-align:center;margin-top:8px;padding:8px;
-                                background:#f0fdf4;border-radius:8px;border:1px solid #bbf7d0;">
-                        <span style="font-size:13px;color:#166534;">
-                            🏆 수익 기준 <b>{winner['district']} · {winner['industry']}</b>이(가) 더 유리합니다.
-                        </span>
-                    </div>
-                    """, unsafe_allow_html=True)
+                compare_data = pd.DataFrame({
+                    "지표": ["예상 월매출(만원)", "임대료(만원)", "수익(만원)", "경쟁 강도"],
+                    h1["district"] + " " + h1["industry"]: [
+                        r1.monthly_revenue_mid, h1["rent"],
+                        r1.monthly_revenue_mid - h1["rent"], r1.competition_index,
+                    ],
+                    h2["district"] + " " + h2["industry"]: [
+                        r2.monthly_revenue_mid, h2["rent"],
+                        r2.monthly_revenue_mid - h2["rent"], r2.competition_index,
+                    ],
+                })
+                st.dataframe(compare_data.set_index("지표"), use_container_width=True)
 
     # ── 탭3: 페르소나 (Phase 2 Sprint 2) ──
     with tab_persona:
@@ -1072,11 +911,11 @@ def render():
 
         # 동네 선택
         cortex_district = st.selectbox(
-            "분석할 동네", district_labels, index=0, key="cortex_district"
+            "분석할 동네", district_options, index=0, key="cortex_district"
         )
 
         if st.button("🔮 전망 분석 시작", key="cortex_start", use_container_width=True):
-            cortex_dc = district_codes[district_labels.index(cortex_district)]
+            cortex_dc = rm[rm["label"] == cortex_district].iloc[0]["district_code"]
 
             with st.spinner("Cortex AI가 60개월 데이터를 분석 중..."):
                 try:

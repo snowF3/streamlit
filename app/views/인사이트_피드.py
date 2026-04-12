@@ -309,40 +309,62 @@ def render():
     if "my_neighborhood" not in st.session_state:
         st.session_state.my_neighborhood = district_options[0]
 
-    # ── 헤더 ──
+    # ── 데이터 준비 ──
     all_ym = sorted(hp["STANDARD_YEAR_MONTH"].unique(), reverse=True)
     ym_labels = [f"{str(m)[:4]}년 {int(str(m)[4:6])}월" for m in all_ym]
     total_records = len(hp)
 
-    h1, h2 = st.columns([5, 2])
-    with h1:
-        st.markdown(
-            f'<div style="display:flex; align-items:center; gap:8px; padding:4px 0;">'
-            f'<span style="color:#6366F1; font-weight:700; font-size:16px;">✦</span>'
-            f'<span style="font-size:13px; font-weight:600; opacity:0.5;">'
-            f'데이터 {total_records:,}건을 분석한 시그널</span></div>',
-            unsafe_allow_html=True,
-        )
-    with h2:
-        selected_ym_label = st.selectbox("기준 년월", ym_labels, index=0, label_visibility="collapsed")
-
-    selected_ym = all_ym[ym_labels.index(selected_ym_label)]
-
-    # 선택된 월 + 이전 3개월 시그널
-    selected_months = [m for m in all_ym if m <= selected_ym][:4]
-    signals = []
-    for ym in selected_months:
-        signals.extend(get_signals_for_month(hp, ym))
-
-    if not signals:
-        st.info("감지된 시그널이 없습니다.")
-        st.stop()
+    # 헤더 (날짜는 중간 패널로 이동)
+    st.markdown(
+        f'<div style="display:flex; align-items:center; gap:8px; padding:4px 0;">'
+        f'<span style="color:#6366F1; font-weight:700; font-size:16px;">✦</span>'
+        f'<span style="font-size:13px; font-weight:600; opacity:0.5;">'
+        f'데이터 {total_records:,}건을 분석한 시그널</span></div>',
+        unsafe_allow_html=True,
+    )
 
     # ═══════════════════════════════════════
     col_left, col_mid, col_right = st.columns([3, 5, 4])
 
     # ─────────────────────────────────────
-    # LEFT: 시그널 리스트
+    # MIDDLE: 상세 패널 (1. 날짜 드롭다운 상단)
+    # ─────────────────────────────────────
+    with col_mid:
+        # 동네 검색 + 날짜 같은 행
+        mid_nb_col, mid_ym_col = st.columns([3, 2])
+        with mid_ym_col:
+            selected_ym_label = st.selectbox("기준 년월", ym_labels, index=0, label_visibility="collapsed")
+
+    selected_ym = all_ym[ym_labels.index(selected_ym_label)]
+
+    # 상위3+하위3 고정 상단 옵션
+    month_hp_sorted = hp[hp["STANDARD_YEAR_MONTH"] == selected_ym].sort_values("hotplace_score", ascending=False)
+    if not month_hp_sorted.empty:
+        top3 = month_hp_sorted.head(3)
+        bot3 = month_hp_sorted.tail(3)
+        top_bot = pd.concat([top3, bot3]).drop_duplicates(subset="DISTRICT_CODE")
+        top_bot_labels = [f"{r['name']}" for _, r in top_bot.iterrows()]
+        rest_labels = [o for o in district_options if o not in top_bot_labels]
+        mid_options = top_bot_labels + ["───────────"] + rest_labels
+    else:
+        mid_options = district_options
+
+    with col_mid:
+        with mid_nb_col:
+            mid_district = st.selectbox("동네 검색", mid_options, index=0, label_visibility="collapsed", key="mid_district_sel")
+            if mid_district == "───────────":
+                mid_district = mid_options[0]
+
+    # 선택된 월 시그널만 (해당 월만)
+    signals = get_signals_for_month(hp, selected_ym)
+
+    if not signals:
+        with col_mid:
+            st.info("해당 월에 시그널이 없습니다.")
+        st.stop()
+
+    # ─────────────────────────────────────
+    # LEFT: 시그널 리스트 (2. 드롭다운 없이, 해당 월만)
     # ─────────────────────────────────────
     with col_left:
         filter_val = st.radio("필터", ["전체", "상승", "하락"], horizontal=True, label_visibility="collapsed")
@@ -366,63 +388,54 @@ def render():
             else:
                 s["_rank"] = f"{rank}/{total_d}"
 
-        # selectbox 시그널 선택
-        def _sig_label(s):
+        if "selected_signal_idx" not in st.session_state:
+            st.session_state.selected_signal_idx = 0
+
+        # HTML 카드 리스트 (컨테이너)
+        for i, s in enumerate(filtered):
+            is_sel = (i == st.session_state.selected_signal_idx)
             cp = "+" if s["direction"] == "up" else ""
-            dl = "▲" if s["direction"] == "up" else "▼"
-            m = s["month_label"]
-            return f"[{m[:4]}.{m[5:]}] {s['name']} {cp}{s['composite']}점{dl} {s['_rank']}"
-
-        sig_options = [_sig_label(s) for s in filtered]
-        sel_idx = min(st.session_state.selected_signal_idx, len(filtered) - 1)
-
-        if "sig_sel" not in st.session_state:
-            st.session_state.sig_sel = sig_options[sel_idx] if sig_options else ""
-
-        def _on_sig_change():
-            idx = sig_options.index(st.session_state.sig_sel) if st.session_state.sig_sel in sig_options else 0
-            st.session_state.selected_signal_idx = idx
-
-        st.selectbox("시그널", sig_options, key="sig_sel", label_visibility="collapsed", on_change=_on_sig_change)
-        st.session_state.selected_signal_idx = sig_options.index(st.session_state.sig_sel) if st.session_state.sig_sel in sig_options else 0
-
-        # HTML 카드 리스트
-        month_groups: dict[str, list] = {}
-        for s in filtered:
-            month_groups.setdefault(s["month_label"], []).append(s)
-
-        for ml, sigs_m in month_groups.items():
-            year, mon = ml[:4], ml[5:]
-            st.markdown(f'<div class="signal-header">{year}년 {int(mon)}월</div>', unsafe_allow_html=True)
-            for s in sigs_m:
-                is_sel = (filtered.index(s) == st.session_state.selected_signal_idx)
-                cp = "+" if s["direction"] == "up" else ""
-                color = "#f04452" if s["direction"] == "up" else "#3182f6"
-                dl = "상승" if s["direction"] == "up" else "하락"
-                kw = s["keywords"][0] if s["keywords"] else ""
-                bg = "rgba(99,102,241,0.12)" if is_sel else "transparent"
-                bl = "3px solid #6366F1" if is_sel else "3px solid transparent"
-                mark = "● " if is_sel else ""
-                st.markdown(
-                    f'<div style="padding:6px 8px; background:{bg}; border-left:{bl}; border-radius:0 4px 4px 0; margin-bottom:3px;">'
-                    f'  <div style="display:flex; justify-content:space-between;">'
-                    f'    <span style="font-size:12px; font-weight:700;">{mark}{s["name"]}</span>'
-                    f'    <span style="font-size:9px; opacity:0.3;">{s["_rank"]}</span></div>'
-                    f'  <div style="font-size:11px; margin-top:2px;">'
-                    f'    <span style="color:{color};">{cp}{s["composite"]}점 {dl}</span>'
-                    f'    <span style="opacity:0.3;"> · {kw}</span></div>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-
+            color = "#f04452" if s["direction"] == "up" else "#3182f6"
+            dl = "상승" if s["direction"] == "up" else "하락"
+            kw = s["keywords"][0] if s["keywords"] else ""
+            bg = "rgba(99,102,241,0.12)" if is_sel else "transparent"
+            bl = "3px solid #6366F1" if is_sel else "3px solid transparent"
+            mark = "● " if is_sel else ""
+            st.markdown(
+                f'<div style="padding:6px 8px; background:{bg}; border-left:{bl}; border-radius:0 4px 4px 0; margin-bottom:3px;">'
+                f'  <div style="display:flex; justify-content:space-between;">'
+                f'    <span style="font-size:12px; font-weight:700;">{mark}{s["name"]}</span>'
+                f'    <span style="font-size:9px; opacity:0.3;">{s["_rank"]}</span></div>'
+                f'  <div style="font-size:11px; margin-top:2px;">'
+                f'    <span style="color:{color};">{cp}{s["composite"]}점 {dl}</span>'
+                f'    <span style="opacity:0.3;"> · {kw}</span></div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
 
     # ─────────────────────────────────────
-    # MIDDLE: 상세 패널
+    # MIDDLE: 상세 패널 (계속)
     # ─────────────────────────────────────
     with col_mid:
-        st.markdown("")  # 상단 여백
-        sel_idx = min(st.session_state.selected_signal_idx, len(signals) - 1)
-        sig = signals[sel_idx]
+        # 중간 동네 드롭다운에서 선택한 동네의 시그널 찾기
+        mid_sel_row = rm[rm["label"] == mid_district].iloc[0] if mid_district in rm["label"].values else None
+        mid_dc = mid_sel_row["district_code"] if mid_sel_row is not None else None
+
+        # 선택 동네가 시그널에 있으면 해당 시그널, 없으면 전체 hp에서 조회
+        sig = None
+        if mid_dc:
+            for s in signals:
+                if s["dc"] == mid_dc:
+                    sig = s
+                    break
+            if not sig:
+                # 시그널 TOP에 없는 동네 → hp에서 직접 조회
+                mid_hp = hp[(hp["DISTRICT_CODE"] == mid_dc) & (hp["STANDARD_YEAR_MONTH"] == selected_ym)]
+                if not mid_hp.empty:
+                    sig = _hp_to_signal(mid_hp.iloc[0])
+        if not sig:
+            sel_idx = min(st.session_state.selected_signal_idx, len(signals) - 1)
+            sig = signals[sel_idx]
         chg_prefix = "+" if sig["direction"] == "up" else ""
         dir_text = "상승" if sig["direction"] == "up" else "하락"
         dir_cls = "up" if sig["direction"] == "up" else "down"
@@ -444,19 +457,6 @@ def render():
             unsafe_allow_html=True,
         )
 
-        # 핫플 점수 도움말
-        with st.expander("핫플 점수란?"):
-            st.markdown(
-                '<div style="font-size:11px; line-height:1.6;">'
-                '<b>핫플 점수</b>는 5개 선행지표의 전월대비 변동률을 가중합하여 산출합니다.<br><br>'
-                '<b>공식</b>: 방문인구(25%) + 카페·식음료 매출(20%) + 유동인구(20%) + 매매가(20%) + 신규설치(15%)<br><br>'
-                '<b>누적 점수</b> = 100(기준) + 전체 월별 핫플 점수 합산<br>'
-                '100점 이상: 기준 대비 상승 추세 / 100점 이하: 하락 추세<br><br>'
-                '<b>연관 동네</b>: 같은 구(區) 내 동네 중 해당 월 변동이 큰 동네를 표시합니다.'
-                '</div>',
-                unsafe_allow_html=True,
-            )
-
         # 왜 올랐을까?
         why_title = "왜 올랐을까?" if sig["direction"] == "up" else "왜 떨어졌을까?"
         with _container(border=True):
@@ -467,17 +467,32 @@ def render():
             )
             st.markdown(f'<ul style="padding-left:18px; margin:6px 0 0;">{reasons_html}</ul>', unsafe_allow_html=True)
 
+        st.markdown("")  # 불릿↔키워드 여백
+        st.markdown("")
+        st.markdown("")
         kw_html = "".join(f'<span class="kw-tag">{kw}</span>' for kw in sig["keywords"])
         st.markdown(kw_html, unsafe_allow_html=True)
+        st.markdown("")  # 키워드 아래 여백
 
-        # 출처 (접힌 상태)
-        with st.expander(f"{len(sig['sources'])}개 출처", expanded=False):
-            for src in sig["sources"]:
-                st.markdown(f'<div style="font-size:12px; padding:2px 0;">{src} · {m_year}년 {int(m_mon)}월</div>', unsafe_allow_html=True)
-
-        # 점수 breakdown (접힌 상태) — 핫플 5개 지표
+        # 상세 정보 (핫플 점수란? + 출처 + 점수 구성 통합)
         w = sig.get("weights", {"visiting": 0.25, "cafe": 0.20, "young": 0.20, "price": 0.20, "install": 0.15})
-        with st.expander("점수 구성 보기", expanded=False):
+        with st.expander("상세 정보", expanded=False):
+            # 핫플 점수란?
+            st.markdown(
+                '<div style="font-size:11px; line-height:1.6; margin-bottom:8px;">'
+                '<b style="color:#6366F1;">핫플 점수란?</b><br>'
+                '5개 선행지표의 전월대비 변동률을 가중합하여 산출합니다.<br>'
+                '공식: 방문인구(25%) + 카페매출(20%) + 유동인구(20%) + 매매가(20%) + 신규설치(15%)<br>'
+                '누적 점수 = 100(기준) + 전체 월별 합산 | 연관 동네 = 같은 구 내 동네'
+                '</div>',
+                unsafe_allow_html=True,
+            )
+            # 출처
+            st.markdown(f'<div style="font-size:11px; margin-bottom:8px;"><b style="color:#6366F1;">출처</b> ({len(sig["sources"])}개)<br>'
+                + "<br>".join(f'{src} · {m_year}년 {int(m_mon)}월' for src in sig["sources"])
+                + '</div>', unsafe_allow_html=True)
+            # 점수 구성
+            st.markdown('<div style="font-size:11px; margin-bottom:4px;"><b style="color:#6366F1;">점수 구성</b></div>', unsafe_allow_html=True)
             for label, chg, weight, score in [
                 ("방문인구", sig["visiting_chg"], int(w["visiting"]*100), round(sig["visiting_chg"] * w["visiting"], 1)),
                 ("카페·식음료", sig["cafe_chg"], int(w["cafe"]*100), round(sig["cafe_chg"] * w["cafe"], 1)),
@@ -490,16 +505,14 @@ def render():
                 sp = "+" if score > 0 else ""
                 cp = "+" if chg > 0 else ""
                 st.markdown(
-                    f'<div style="padding:5px 0;">'
-                    f'  <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:2px;">'
-                    f'    <span>{label} <span style="opacity:0.35;">({weight}%)</span></span>'
-                    f'    <span style="font-weight:700; color:{bar_color};">{sp}{score:.1f}점</span>'
-                    f'  </div>'
-                    f'  <div style="display:flex; align-items:center; gap:6px;">'
-                    f'    <div style="flex:1; height:5px; border-radius:3px; background:rgba(128,128,128,0.1);">'
-                    f'      <div style="width:{bar_width}%; height:100%; border-radius:3px; background:{bar_color};"></div></div>'
-                    f'    <span style="font-size:10px; opacity:0.35;">{cp}{chg}%</span>'
-                    f'  </div>'
+                    f'<div style="padding:3px 0;">'
+                    f'  <div style="display:flex; justify-content:space-between; font-size:11px;">'
+                    f'    <span>{label} ({weight}%)</span>'
+                    f'    <span style="font-weight:700; color:{bar_color};">{sp}{score:.1f}점</span></div>'
+                    f'  <div style="display:flex; align-items:center; gap:4px;">'
+                    f'    <div style="flex:1; height:4px; border-radius:2px; background:rgba(128,128,128,0.1);">'
+                    f'      <div style="width:{bar_width}%; height:100%; border-radius:2px; background:{bar_color};"></div></div>'
+                    f'    <span style="font-size:9px; opacity:0.35;">{cp}{chg}%</span></div>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
@@ -509,12 +522,10 @@ def render():
             total_color = "#f04452" if sig["composite"] > 0 else "#3182f6"
             total_prefix = "+" if sig["composite"] > 0 else ""
             st.markdown(
-                f'<div style="padding:6px 0 2px; border-top:1px solid rgba(128,128,128,0.12); margin-top:4px;">'
-                f'  <div style="display:flex; justify-content:space-between; font-size:13px; font-weight:800;">'
-                f'    <span>종합</span>'
-                f'    <span style="color:{total_color};">{mid_current}점</span>'
-                f'  </div>'
-                f'  <div style="text-align:right; font-size:10px; opacity:0.35;">{mid_prev}점 → {mid_current}점 ({total_prefix}{sig["composite"]}점)</div>'
+                f'<div style="padding:4px 0; border-top:1px solid rgba(128,128,128,0.1); margin-top:4px;">'
+                f'  <div style="display:flex; justify-content:space-between; font-size:12px; font-weight:800;">'
+                f'    <span>종합</span><span style="color:{total_color};">{mid_current}점</span></div>'
+                f'  <div style="font-size:9px; opacity:0.3; text-align:right;">{mid_prev}점 → {mid_current}점 ({total_prefix}{sig["composite"]}점)</div>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
@@ -523,7 +534,7 @@ def render():
 
         # 연관 동네 (같은 구 내 동네)
         st.markdown('<div style="font-size:13px; font-weight:800; margin-bottom:2px;">연관 동네</div>', unsafe_allow_html=True)
-        st.caption("같은 구(區) 내 다른 동네의 상권 변화")
+        st.markdown('<span style="font-size:10px; opacity:0.35;">같은 구 내 동네</span>', unsafe_allow_html=True)
         same_city = [s for s in signals if s["city"] == sig["city"] and s["dc"] != sig["dc"]]
         if same_city:
             for ri, rel in enumerate(same_city[:5]):
@@ -550,7 +561,9 @@ def render():
         my_city = my_nb.split(" ")[0] if my_nb else ""
         my_short = my_nb.split(" ")[-1] if my_nb else ""
         my_dc = rm[rm["label"] == my_nb]["district_code"].values[0] if my_nb in rm["label"].values else ""
-        same_city_hp = hp[(hp["city"] == my_city) & (hp["STANDARD_YEAR_MONTH"] == selected_ym)].sort_values("hotplace_score", ascending=False)
+        # 근처 시그널은 중간 패널 기준월 사용 (내 동네 월은 아직 미정의)
+        _nearby_ym = selected_ym
+        same_city_hp = hp[(hp["city"] == my_city) & (hp["STANDARD_YEAR_MONTH"] == _nearby_ym)].sort_values("hotplace_score", ascending=False)
         my_row_hp = same_city_hp[same_city_hp["DISTRICT_CODE"] == my_dc]
         others_hp = same_city_hp[same_city_hp["DISTRICT_CODE"] != my_dc].head(3)
         nearby_rows = pd.concat([my_row_hp, others_hp])
@@ -574,12 +587,14 @@ def render():
     # RIGHT: 내 동네 프로파일
     # ─────────────────────────────────────
     with col_right:
-        st.markdown("")
-        st.markdown('<div style="font-size:14px; font-weight:700; margin-bottom:8px;">내 동네</div>', unsafe_allow_html=True)
+        st.markdown('<div style="font-size:14px; font-weight:700; margin-bottom:4px;">내 동네</div>', unsafe_allow_html=True)
+        # 3. 동네 + 날짜 같은 행
         current_idx = district_options.index(st.session_state.my_neighborhood) if st.session_state.my_neighborhood in district_options else 0
-        def _on_nb_change():
-            st.session_state.my_neighborhood = st.session_state.my_nb_select
-        st.selectbox("동네 변경", district_options, index=current_idx, label_visibility="collapsed", key="my_nb_select", on_change=_on_nb_change)
+        nb_col, ym_col = st.columns([3, 2])
+        with nb_col:
+            def _on_nb_change():
+                st.session_state.my_neighborhood = st.session_state.my_nb_select
+            st.selectbox("동네", district_options, index=current_idx, label_visibility="collapsed", key="my_nb_select", on_change=_on_nb_change)
         new_nb = st.session_state.my_nb_select if "my_nb_select" in st.session_state else st.session_state.my_neighborhood
 
         sel_row = rm[rm["label"] == new_nb].iloc[0]
@@ -588,14 +603,13 @@ def render():
         district = sel_row["district_kor"]
 
         all_months = sorted(pop_agg["STANDARD_YEAR_MONTH"].unique(), reverse=True)
-        # 내 동네 독립 기준월
         my_ym_labels = [f"{str(m)[:4]}년 {int(str(m)[4:6])}월" for m in all_months]
-        my_ym_label = st.selectbox("기준 년월", my_ym_labels, index=0, label_visibility="collapsed", key="my_nb_month")
+        with ym_col:
+            my_ym_label = st.selectbox("년월", my_ym_labels, index=0, label_visibility="collapsed", key="my_nb_month")
         latest_month = all_months[my_ym_labels.index(my_ym_label)]
         ym_idx = all_months.index(latest_month) if latest_month in all_months else 0
         prev_month = all_months[ym_idx + 1] if ym_idx + 1 < len(all_months) else None
         st.caption(f"{city} {district} · {my_ym_label}")
-        st.caption("↑ 사이드바에서 '상권 분석'으로 이동")
 
         if not latest_month:
             st.stop()
@@ -618,8 +632,8 @@ def render():
 
         with tab_summary:
             # 프로파일 점수 — 누적 계산 (100 + 전월들 합산)
-            my_hp_all = hp[(hp["DISTRICT_CODE"] == dc) & (hp["STANDARD_YEAR_MONTH"] <= selected_ym)].sort_values("STANDARD_YEAR_MONTH")
-            my_hp_curr = hp[(hp["DISTRICT_CODE"] == dc) & (hp["STANDARD_YEAR_MONTH"] == selected_ym)]
+            my_hp_all = hp[(hp["DISTRICT_CODE"] == dc) & (hp["STANDARD_YEAR_MONTH"] <= latest_month)].drop_duplicates(subset="STANDARD_YEAR_MONTH").sort_values("STANDARD_YEAR_MONTH")
+            my_hp_curr = hp[(hp["DISTRICT_CODE"] == dc) & (hp["STANDARD_YEAR_MONTH"] == latest_month)].drop_duplicates(subset="STANDARD_YEAR_MONTH")
             my_sig = [_hp_to_signal(row) for _, row in my_hp_curr.iterrows()] if not my_hp_curr.empty else []
 
             if my_sig:
@@ -631,9 +645,9 @@ def render():
                 score_prefix = "+" if month_chg > 0 else ""
 
                 # 순위 계산
-                month_all = hp[hp["STANDARD_YEAR_MONTH"] == selected_ym].copy()
+                month_all = hp[hp["STANDARD_YEAR_MONTH"] == latest_month].copy()
                 month_all["cum"] = month_all["DISTRICT_CODE"].apply(
-                    lambda d: 100 + hp[(hp["DISTRICT_CODE"] == d) & (hp["STANDARD_YEAR_MONTH"] <= selected_ym)]["hotplace_score"].sum()
+                    lambda d: 100 + hp[(hp["DISTRICT_CODE"] == d) & (hp["STANDARD_YEAR_MONTH"] <= latest_month)]["hotplace_score"].sum()
                 )
                 rank = int((month_all["cum"] > cumulative_score).sum() + 1)
                 total_districts = len(month_all)
@@ -655,32 +669,29 @@ def render():
 
                 # 점수 추이 미니 차트
                 # 전체 기간 추이 (x축 고정)
-                all_hp_dc = hp[hp["DISTRICT_CODE"] == dc].sort_values("STANDARD_YEAR_MONTH")
+                all_hp_dc = hp[(hp["DISTRICT_CODE"] == dc) & (hp["STANDARD_YEAR_MONTH"] <= latest_month)].drop_duplicates(subset="STANDARD_YEAR_MONTH").sort_values("STANDARD_YEAR_MONTH")
                 if len(all_hp_dc) > 1:
                     trend = all_hp_dc.copy()
                     trend["cum_score"] = 100 + trend["hotplace_score"].cumsum()
                     trend["label"] = trend["STANDARD_YEAR_MONTH"].astype(str).apply(lambda x: f"{x[2:4]}.{x[4:6]}")
-                    curr_label = f"{str(selected_ym)[2:4]}.{str(selected_ym)[4:6]}"
+                    curr_label = f"{str(latest_month)[2:4]}.{str(latest_month)[4:6]}"
+
+                    # 현재 월만 빨간 마커, 나머지 보라색
+                    marker_colors = ["#f04452" if lb == curr_label else "#6366F1" for lb in trend["label"]]
+                    marker_sizes = [10 if lb == curr_label else 3 for lb in trend["label"]]
 
                     fig_trend = go.Figure(go.Scatter(
                         x=trend["label"], y=trend["cum_score"],
-                        mode="lines", line=dict(color="#6366F1", width=2),
-                        fill="tozeroy", fillcolor="rgba(99,102,241,0.08)",
+                        mode="lines+markers", line=dict(color="#6366F1", width=2),
+                        marker=dict(size=marker_sizes, color=marker_colors),
                         showlegend=False, name="",
                     ))
-                    # 현재 월 포인트
-                    curr_row = trend[trend["label"] == curr_label]
-                    if not curr_row.empty:
-                        fig_trend.add_trace(go.Scatter(
-                            x=[curr_label], y=[curr_row["cum_score"].values[0]],
-                            mode="markers", marker=dict(size=10, color="#f04452"),
-                            showlegend=False, name="",
-                        ))
+                    if curr_label in trend["label"].values:
                         fig_trend.add_vline(x=curr_label, line_dash="dot", line_color="rgba(240,68,82,0.3)")
                     fig_trend.update_layout(
-                        height=100, margin=dict(l=0, r=0, t=3, b=3),
-                        xaxis=dict(showgrid=False, tickfont=dict(size=8)),
-                        yaxis=dict(showgrid=False, showticklabels=False),
+                        height=130, margin=dict(l=0, r=0, t=5, b=5),
+                        xaxis=dict(showgrid=False, tickfont=dict(size=7)),
+                        yaxis=dict(showgrid=False, showticklabels=True, tickfont=dict(size=7)),
                         hovermode="x unified", showlegend=False,
                     )
                     st.plotly_chart(fig_trend, use_container_width=True, key="my_trend")
