@@ -786,11 +786,11 @@ def render():
                     labels = [TIME_SLOT_KOR.get(t, t) for t in ct_agg.index]
                     fig_ct = go.Figure()
                     if "TOTAL_SALES" in ct_agg.columns:
-                        fig_ct.add_trace(go.Bar(x=labels, y=ct_agg["TOTAL_SALES"], name="전체", marker_color="#636EFA"))
+                        fig_ct.add_trace(go.Bar(x=labels, y=ct_agg["TOTAL_SALES"].tolist(), name="전체", marker_color="#636EFA"))
                     if "FOOD_SALES" in ct_agg.columns:
-                        fig_ct.add_trace(go.Bar(x=labels, y=ct_agg["FOOD_SALES"], name="식음료", marker_color="#EF553B"))
+                        fig_ct.add_trace(go.Bar(x=labels, y=ct_agg["FOOD_SALES"].tolist(), name="식음료", marker_color="#EF553B"))
                     if "COFFEE_SALES" in ct_agg.columns:
-                        fig_ct.add_trace(go.Bar(x=labels, y=ct_agg["COFFEE_SALES"], name="커피", marker_color="#00CC96"))
+                        fig_ct.add_trace(go.Bar(x=labels, y=ct_agg["COFFEE_SALES"].tolist(), name="커피", marker_color="#00CC96"))
                     fig_ct.update_layout(title="시간대별 카드매출", barmode="group", height=230,
                                         margin=dict(l=25, r=10, t=30, b=25),
                                         yaxis_title="매출(원)", xaxis_title="시간대")
