@@ -503,8 +503,9 @@ def render():
 
         st.divider()
 
-        # 연관 동네 (클릭 가능)
-        st.markdown('<div style="font-size:13px; font-weight:800; margin-bottom:4px;">연관 동네</div>', unsafe_allow_html=True)
+        # 연관 동네 (같은 구 내 동네)
+        st.markdown('<div style="font-size:13px; font-weight:800; margin-bottom:2px;">연관 동네</div>', unsafe_allow_html=True)
+        st.caption("같은 구(區) 내 다른 동네의 상권 변화")
         same_city = [s for s in signals if s["city"] == sig["city"] and s["dc"] != sig["dc"]]
         if same_city:
             for ri, rel in enumerate(same_city[:5]):
@@ -621,7 +622,7 @@ def render():
                 st.markdown(
                     f'<div style="padding:4px 0;">'
                     f'  <div style="display:flex; justify-content:space-between; align-items:center;">'
-                    f'    <span style="font-size:11px; opacity:0.5;">핫플 점수</span>'
+                    f'    <span style="font-size:11px; opacity:0.5;">핫플 점수 (방문인구·매출·유동인구·매매가·신규설치 종합)</span>'
                     f'    <span style="font-size:11px; opacity:0.5;">{total_districts}개 동네 중 {rank}위</span>'
                     f'  </div>'
                     f'  <div style="font-size:22px; font-weight:800;">{cumulative_score}점</div>'
@@ -644,6 +645,7 @@ def render():
                         x=trend["label"], y=trend["cum_score"],
                         mode="lines", line=dict(color="#6366F1", width=2),
                         fill="tozeroy", fillcolor="rgba(99,102,241,0.08)",
+                        name="핫플 점수 추이",
                     ))
                     # 현재 월 포인트
                     curr_row = trend[trend["label"] == curr_label]
@@ -651,6 +653,7 @@ def render():
                         fig_trend.add_trace(go.Scatter(
                             x=[curr_label], y=[curr_row["cum_score"].values[0]],
                             mode="markers", marker=dict(size=10, color="#f04452"),
+                            name="현재 월",
                             showlegend=False,
                         ))
                         fig_trend.add_vline(x=curr_label, line_dash="dot", line_color="rgba(240,68,82,0.3)")
@@ -725,7 +728,7 @@ def render():
                 if not income_d.empty and "AVERAGE_INCOME" in income_d.columns:
                     avg = income_d["AVERAGE_INCOME"].values[0]
                     if pd.notna(avg) and avg > 0:
-                        st.metric("평균소득", f"{avg/1e4:,.0f}만")
+                        st.metric("평균소득", f"{avg/1e4:,.0f}만원")
             with m_cols[2]:
                 if not income_d.empty and "total_customers" in income_d.columns:
                     cust = income_d["total_customers"].values[0]
@@ -751,7 +754,9 @@ def render():
                         fig_ct.add_trace(go.Bar(x=labels, y=ct_agg["FOOD_SALES"], name="식음료", marker_color="#EF553B"))
                     if "COFFEE_SALES" in ct_agg.columns:
                         fig_ct.add_trace(go.Bar(x=labels, y=ct_agg["COFFEE_SALES"], name="커피", marker_color="#00CC96"))
-                    fig_ct.update_layout(title="시간대별 매출", barmode="group", height=230, margin=dict(l=25, r=10, t=30, b=25))
+                    fig_ct.update_layout(title="시간대별 카드매출 (전체/식음료/커피)", barmode="group", height=230,
+                                        margin=dict(l=25, r=10, t=30, b=25),
+                                        yaxis_title="매출(원)", xaxis_title="시간대")
                     st.plotly_chart(fig_ct, use_container_width=True, key="my_sales_time")
             except Exception:
                 pass
