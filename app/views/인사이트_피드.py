@@ -329,7 +329,12 @@ def render():
     # MIDDLE: 상세 패널 (1. 날짜 드롭다운 상단)
     # ─────────────────────────────────────
     with col_mid:
-        selected_ym_label = st.selectbox("기준 년월", ym_labels, index=0, label_visibility="collapsed")
+        # 동네 검색 + 날짜 같은 행
+        mid_nb_col, mid_ym_col = st.columns([3, 2])
+        with mid_nb_col:
+            mid_district = st.selectbox("동네 검색", district_options, index=0, label_visibility="collapsed", key="mid_district_sel")
+        with mid_ym_col:
+            selected_ym_label = st.selectbox("기준 년월", ym_labels, index=0, label_visibility="collapsed")
 
     selected_ym = all_ym[ym_labels.index(selected_ym_label)]
 
@@ -395,8 +400,25 @@ def render():
     # MIDDLE: 상세 패널 (계속)
     # ─────────────────────────────────────
     with col_mid:
-        sel_idx = min(st.session_state.selected_signal_idx, len(signals) - 1)
-        sig = signals[sel_idx]
+        # 중간 동네 드롭다운에서 선택한 동네의 시그널 찾기
+        mid_sel_row = rm[rm["label"] == mid_district].iloc[0] if mid_district in rm["label"].values else None
+        mid_dc = mid_sel_row["district_code"] if mid_sel_row is not None else None
+
+        # 선택 동네가 시그널에 있으면 해당 시그널, 없으면 전체 hp에서 조회
+        sig = None
+        if mid_dc:
+            for s in signals:
+                if s["dc"] == mid_dc:
+                    sig = s
+                    break
+            if not sig:
+                # 시그널 TOP에 없는 동네 → hp에서 직접 조회
+                mid_hp = hp[(hp["DISTRICT_CODE"] == mid_dc) & (hp["STANDARD_YEAR_MONTH"] == selected_ym)]
+                if not mid_hp.empty:
+                    sig = _hp_to_signal(mid_hp.iloc[0])
+        if not sig:
+            sel_idx = min(st.session_state.selected_signal_idx, len(signals) - 1)
+            sig = signals[sel_idx]
         chg_prefix = "+" if sig["direction"] == "up" else ""
         dir_text = "상승" if sig["direction"] == "up" else "하락"
         dir_cls = "up" if sig["direction"] == "up" else "down"
@@ -430,6 +452,7 @@ def render():
 
         kw_html = "".join(f'<span class="kw-tag">{kw}</span>' for kw in sig["keywords"])
         st.markdown(kw_html, unsafe_allow_html=True)
+        st.markdown("")  # 키워드 아래 여백
 
         # 상세 정보 (핫플 점수란? + 출처 + 점수 구성 통합)
         w = sig.get("weights", {"visiting": 0.25, "cafe": 0.20, "young": 0.20, "price": 0.20, "install": 0.15})
@@ -491,7 +514,7 @@ def render():
 
         # 연관 동네 (같은 구 내 동네)
         st.markdown('<div style="font-size:13px; font-weight:800; margin-bottom:2px;">연관 동네</div>', unsafe_allow_html=True)
-        st.caption("같은 구(區) 내 다른 동네의 상권 변화")
+        st.markdown('<span style="font-size:10px; opacity:0.35;">같은 구 내 동네</span>', unsafe_allow_html=True)
         same_city = [s for s in signals if s["city"] == sig["city"] and s["dc"] != sig["dc"]]
         if same_city:
             for ri, rel in enumerate(same_city[:5]):
