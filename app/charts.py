@@ -106,13 +106,25 @@ def population_flow_chart(pop_time_df, title="시간대별 유동인구"):
     return fig
 
 
-def population_pyramid(pop_demo_df, title="인구 피라미드"):
-    """성별×연령대 인구 피라미드"""
+def population_pyramid(pop_demo_df, title="인구 피라미드", pop_type="전체"):
+    """성별×연령대 인구 피라미드. pop_type: 전체/거주/직장/방문"""
     if pop_demo_df.empty:
         return go.Figure().update_layout(title="데이터 없음")
 
     df = pop_demo_df.copy()
-    df["TOTAL_POP"] = df["RESIDENTIAL_POPULATION"] + df["WORKING_POPULATION"] + df["VISITING_POPULATION"]
+
+    type_col_map = {
+        "전체": None,  # 합산
+        "거주": "RESIDENTIAL_POPULATION",
+        "직장": "WORKING_POPULATION",
+        "방문": "VISITING_POPULATION",
+    }
+
+    if pop_type in type_col_map and type_col_map[pop_type]:
+        col = type_col_map[pop_type]
+        df["TOTAL_POP"] = df[col]
+    else:
+        df["TOTAL_POP"] = df["RESIDENTIAL_POPULATION"] + df["WORKING_POPULATION"] + df["VISITING_POPULATION"]
 
     male = df[df["GENDER"] == "M"].groupby("AGE_GROUP")["TOTAL_POP"].sum()
     female = df[df["GENDER"] == "F"].groupby("AGE_GROUP")["TOTAL_POP"].sum()

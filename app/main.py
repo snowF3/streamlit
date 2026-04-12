@@ -1,5 +1,6 @@
 """
-동네 엑스레이 — 상단 탭 네비게이션 + 사이드바 AI 에이전트
+XR-AI(엑스레이) — AI 기반 상권 분석 & 출점 의사결정 플랫폼
+타겟: 소상공인 · 프랜차이즈 출점 · 팝업 위치 기획
 """
 import streamlit as st
 import sys
@@ -8,8 +9,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 st.set_page_config(
-    page_title="동네 엑스레이",
-    page_icon="🏙️",
+    page_title="XR-AI | 상권 분석 플랫폼",
+    page_icon="🔬",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -26,49 +27,21 @@ h2, h3 { font-size: 15px !important; }
 from chat_ui import render_sidebar_chat
 render_sidebar_chat()
 
-# ── 상단 탭 네비게이션 ──
-tab_feed, tab_analysis, tab_profile, tab_marketing, tab_twin, tab_compare = st.tabs([
-    "🏠 인사이트", "📊 전체 분석", "🔍 동네 프로파일", "📢 마케팅", "🌆 디지털 트윈", "⚖️ 동네 비교"
+# ── 상단 탭 (2탭) ──
+tab_insight, tab_future = st.tabs([
+    "📊 인사이트", "🔮 미래 예측"
 ])
 
-with tab_feed:
+with tab_insight:
     try:
-        from views.인사이트_피드 import render
-        render()
+        from views.인사이트_피드 import render as render_feed
+        render_feed()
     except Exception as e:
-        st.error(f"인사이트 피드 로드 오류: {e}")
+        st.error(f"인사이트 로드 오류: {e}")
 
-with tab_analysis:
+with tab_future:
     try:
-        from views.전체_분석 import render
-        render()
+        from views.디지털_트윈 import render as render_twin
+        render_twin()
     except Exception as e:
-        st.error(f"전체 분석 로드 오류: {e}")
-
-with tab_profile:
-    try:
-        from views.동네_프로파일 import render
-        render()
-    except Exception as e:
-        st.error(f"동네 프로파일 로드 오류: {e}")
-
-with tab_marketing:
-    try:
-        from views.마케팅 import render as render_marketing
-        render_marketing()
-    except Exception as e:
-        st.error(f"마케팅 로드 오류: {e}")
-
-with tab_twin:
-    try:
-        from views.디지털_트윈 import render
-        render()
-    except Exception as e:
-        st.error(f"디지털 트윈 로드 오류: {e}")
-
-with tab_compare:
-    try:
-        from views.동네_비교 import render
-        render()
-    except Exception as e:
-        st.error(f"동네 비교 로드 오류: {e}")
+        st.error(f"미래 예측 로드 오류: {e}")
