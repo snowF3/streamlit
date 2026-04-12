@@ -389,56 +389,125 @@ def _answer(q, hist_list, pctx="", sel_d=""):
 
 def _do_ask(q, pctx, sel_d):
     st.session_state.chat_messages.append({"role": "user", "content": q})
+    # 로딩 단계 표시
+    status = st.sidebar.empty()
+    status.caption("🔍 질문 분석 중...")
+    info = _classify(q, "")
+    intent = info.get("intent", "lookup")
+    d = info.get("district", "")
+
+    step_labels = {
+        "simulate": "📊 상권 데이터 조회 중...",
+        "lookup": "📊 동네 데이터 조회 중...",
+        "compare": "⚖️ 비교 데이터 조회 중...",
+        "forecast": "🔮 추이 데이터 분석 중...",
+        "hotplace": "🔥 핫플 랭킹 조회 중...",
+        "marketing": "📢 마케팅 데이터 조회 중...",
+    }
+    status.caption(step_labels.get(intent, "📊 데이터 조회 중..."))
+
     r = _answer(q, st.session_state.chat_messages[:-1], pctx, sel_d)
-    st.session_state.chat_messages.append({"role": "assistant", "content": r["answer"], "intent": r["intent"]})
+
+    status.caption("🧠 AI가 분석 결과를 정리하고 있어요...")
+
+    st.session_state.chat_messages.append({
+        "role": "assistant",
+        "content": r["answer"],
+        "intent": r["intent"],
+        "district": r.get("district", ""),
+    })
+    status.empty()
     _safe_rerun()
 
 
+# ── 후속 질문 생성 ──
+def _get_followup(intent, district):
+    """답변 후 관련 후속 질문 제안"""
+    followups = {
+        "simulate": [
+            (f"{district} 3개월 전망 예측해줘", "🔮 미래 예측"),
+            (f"{district} 주변 경쟁 상권 비교해줘", "⚖️ 경쟁 분석"),
+        ] if district else [],
+        "lookup": [
+            (f"{district}에서 어떤 업종이 유망해?", "💡 업종 추천"),
+            (f"{district} 부동산 시세 추이", "🏠 부동산"),
+        ] if district else [],
+        "hotplace": [
+            ("1위 동네에 카페 출점하면 매출은?", "☕ 출점 시뮬"),
+            ("핫플 동네 3개월 전망", "🔮 미래 예측"),
+        ],
+        "forecast": [
+            (f"{district} 상권 분석해줘", "📊 상세 분석"),
+        ] if district else [],
+        "compare": [
+            ("어디가 출점하기 더 좋아?", "💡 추천"),
+        ],
+    }
+    return followups.get(intent, [])
+
+
+# ── 동적 플레이스홀더 ──
+import random
+_PLACEHOLDERS = [
+    "잠원동에 카페 출점하면?",
+    "핫플 동네 Top 5는?",
+    "신당동 vs 여의도 비교",
+    "서초동 3개월 전망",
+    "어디서 뭘 팔면 좋을까?",
+    "영등포구 상권 분석해줘",
+    "최근 마케팅 채널 효과는?",
+]
+
+
 def render_sidebar_chat():
-    """사이드바 AI 채팅 — 대화 위, 입력 아래"""
+    """사이드바 AI 채팅 — UX 최적화 버전"""
     if "chat_messages" not in st.session_state:
         st.session_state.chat_messages = []
+    if "pending_q" not in st.session_state:
+        st.session_state.pending_q = None
 
     with st.sidebar:
-        # 헤더
-        st.markdown("""<div style="padding:6px 0 2px;">
-            <span style="font-size:14px;font-weight:700;">XR-AI</span>
-            <span style="font-size:10px;color:#888;margin-left:4px;">상권 분석 에이전트</span>
-        </div>""", unsafe_allow_html=True)
-        st.markdown("---")
 
-        # 대화 히스토리 (위에)
-        if st.session_state.chat_messages:
-            for msg in st.session_state.chat_messages:
-                if msg["role"] == "user":
-                    st.markdown(f"""<div style="text-align:right;margin:6px 0;">
-                        <span style="background:#6366F1;color:white;padding:6px 10px;
-                        border-radius:10px 10px 3px 10px;font-size:12px;display:inline-block;max-width:90%;">
-                        {msg['content']}</span></div>""", unsafe_allow_html=True)
-                else:
-                    # 마크다운 표/제목 지원을 위해 st.markdown 직접 사용
-                    st.markdown(msg['content'])
-            st.markdown("---")
-
-        # 추천 질문 (대화 없을 때만)
+        # ══════════════════════════════════
+        # 대화 없을 때: 웰컴 + 추천 질문
+        # ══════════════════════════════════
         if not st.session_state.chat_messages:
-            st.caption("💡 추천 질문")
-            qs = [
-                ("잠원동에 카페 출점하려는데 상권 분석해줘", "☕ 출점 분석"),
-                ("방문인구 증가율 Top 5 동네는? 팝업 후보지 추천", "📍 팝업 후보지"),
-                ("신당동 3개월 후 상권 전망 예측해줘", "🔮 미래 예측"),
-                ("신당동과 여의도동 상권 비교해줘", "⚖️ 상권 비교"),
-                ("서초구에서 프랜차이즈 출점하기 좋은 동네와 업종은?", "🏪 출점 추천"),
-                ("최근 어떤 마케팅 채널의 고객 유입이 효과적이야?", "📢 마케팅 분석"),
-            ]
+            # 웰컴 카드
+            st.markdown("""
+            <div style="text-align:center;padding:12px 8px 8px;">
+                <div style="font-size:20px;font-weight:800;margin-bottom:2px;">XR-AI</div>
+                <div style="font-size:10px;color:#888;">AI 상권 분석 에이전트</div>
+            </div>
+            <div style="background:rgba(99,102,241,0.08);padding:10px 12px;border-radius:10px;
+                margin:8px 0;border:1px solid rgba(99,102,241,0.15);">
+                <div style="font-size:11px;color:#aaa;line-height:1.6;">
+                    서울 118개 법정동의 유동인구 · 카드매출 · 소득 · 부동산 데이터를
+                    실시간으로 분석합니다.
+                </div>
+                <div style="font-size:9px;color:#666;margin-top:4px;">
+                    📊 SPH · 리치고 · 아정당 — 3개 데이터 소스 통합
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
-            # session_state로 버튼 클릭 추적 (연쇄 방지)
-            if "pending_q" not in st.session_state:
-                st.session_state.pending_q = None
+            # 카테고리별 추천 질문
+            st.markdown('<div style="font-size:11px;font-weight:600;margin:10px 0 4px;color:#aaa;">☕ 출점 분석</div>', unsafe_allow_html=True)
+            if st.button("잠원동 카페 출점 상권 분석", key="q_0", use_container_width=True):
+                st.session_state.pending_q = "잠원동에 카페 출점하려는데 상권 분석해줘"
+            if st.button("서초구 프랜차이즈 추천", key="q_1", use_container_width=True):
+                st.session_state.pending_q = "서초구에서 프랜차이즈 출점하기 좋은 동네와 업종은?"
 
-            for i, (query, label) in enumerate(qs):
-                if st.button(label, key=f"q_{i}", use_container_width=True):
-                    st.session_state.pending_q = query
+            st.markdown('<div style="font-size:11px;font-weight:600;margin:10px 0 4px;color:#aaa;">🔮 예측 · 비교</div>', unsafe_allow_html=True)
+            if st.button("핫플 동네 Top 5 + 팝업 후보", key="q_2", use_container_width=True):
+                st.session_state.pending_q = "방문인구 증가율 Top 5 동네는? 팝업 후보지 추천"
+            if st.button("신당동 3개월 전망", key="q_3", use_container_width=True):
+                st.session_state.pending_q = "신당동 3개월 후 상권 전망 예측해줘"
+
+            st.markdown('<div style="font-size:11px;font-weight:600;margin:10px 0 4px;color:#aaa;">📊 데이터 분석</div>', unsafe_allow_html=True)
+            if st.button("신당동 vs 여의도 비교", key="q_4", use_container_width=True):
+                st.session_state.pending_q = "신당동과 여의도동 상권 비교해줘"
+            if st.button("마케팅 채널 효과 분석", key="q_5", use_container_width=True):
+                st.session_state.pending_q = "최근 어떤 마케팅 채널의 고객 유입이 효과적이야?"
 
             # 클릭된 질문 처리
             if st.session_state.pending_q:
@@ -446,9 +515,50 @@ def render_sidebar_chat():
                 st.session_state.pending_q = None
                 _do_ask(q, "", "")
 
-        # 입력 (아래)
-        st.markdown("---")
-        inp = st.text_input("", key="ai_inp", placeholder="질문을 입력하세요...")
+        # ══════════════════════════════════
+        # 대화 있을 때: 히스토리 + 후속 질문
+        # ══════════════════════════════════
+        else:
+            # 헤더 (컴팩트)
+            st.markdown("""<div style="padding:4px 0 2px;">
+                <span style="font-size:13px;font-weight:700;">XR-AI</span>
+                <span style="font-size:9px;color:#666;margin-left:4px;">상권 분석</span>
+            </div>""", unsafe_allow_html=True)
+            st.markdown("---")
+
+            # 대화 히스토리
+            for msg in st.session_state.chat_messages:
+                if msg["role"] == "user":
+                    st.markdown(f"""<div style="text-align:right;margin:6px 0;">
+                        <span style="background:#6366F1;color:white;padding:6px 10px;
+                        border-radius:10px 10px 3px 10px;font-size:12px;display:inline-block;max-width:90%;">
+                        {msg['content']}</span></div>""", unsafe_allow_html=True)
+                else:
+                    st.markdown(msg['content'])
+
+            # 후속 질문 제안
+            last_msg = st.session_state.chat_messages[-1] if st.session_state.chat_messages else None
+            if last_msg and last_msg["role"] == "assistant":
+                followups = _get_followup(last_msg.get("intent", ""), last_msg.get("district", ""))
+                if followups:
+                    st.markdown("---")
+                    st.markdown('<div style="font-size:10px;color:#888;margin-bottom:4px;">💡 이어서 물어보세요</div>', unsafe_allow_html=True)
+                    for i, (fq, fl) in enumerate(followups[:2]):
+                        if st.button(fl, key=f"fw_{i}", use_container_width=True):
+                            st.session_state.pending_q = fq
+
+                    if st.session_state.pending_q:
+                        q = st.session_state.pending_q
+                        st.session_state.pending_q = None
+                        _do_ask(q, "", "")
+
+            st.markdown("---")
+
+        # ══════════════════════════════════
+        # 입력 (항상 하단)
+        # ══════════════════════════════════
+        placeholder = random.choice(_PLACEHOLDERS)
+        inp = st.text_input("", key="ai_inp", placeholder=placeholder)
         c1, c2 = st.columns([4, 1])
         with c1:
             if st.button("전송", key="ai_send", use_container_width=True):
