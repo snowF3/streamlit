@@ -54,7 +54,7 @@ class GraphContextRetriever:
             vr = pop.get("visitor", 0) / max(total, 1)
             top_inds = ", ".join(cons.get("top3_categories", [])[:2])
 
-            inc_str = f"{income/10000:.0f}만" if income > 0 else "-"
+            inc_str = f"{income/10:.0f}만" if income > 0 else "-"  # 천원→만원
             rows.append(
                 f"| {name} | {total:,.0f} | {spc:,.0f}원 | {dn:.1f} | "
                 f"{hhi:.3f} | {inc_str} | {vr:.0%} | {top_inds} |"

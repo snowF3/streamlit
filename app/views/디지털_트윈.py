@@ -42,7 +42,7 @@ except ImportError:
 
 def render():
 
-    st.markdown('<span style="font-size:18px; font-weight:800;">🔮 미래 예측</span>', unsafe_allow_html=True)
+    st.markdown('<span style="font-size:18px; font-weight:800;"> 미래 예측</span>', unsafe_allow_html=True)
     st.caption("상권 시뮬레이션 · AI 예측 · 페르소나 분석 · 데이터 범위: 중구 · 영등포구 · 서초구")
 
     # ══════════════════════════════════════
@@ -64,7 +64,7 @@ def render():
     try:
         income_detail = load_income_detail()
     except Exception as e:
-        st.caption(f"ℹ️ 소득 상세 데이터 미사용: {e}")
+        st.caption(f" 소득 상세 데이터 미사용: {e}")
         income_detail = pd.DataFrame()
 
     # 사용 가능한 법정동
@@ -118,7 +118,7 @@ def render():
     }
     </style>
     <div class="forecast-header">
-        <h3>🔮 3개월 전망</h3>
+        <h3> 3개월 전망</h3>
         <div class="score-help-wrap">
             <span class="score-help-btn">❓</span>
             <div class="score-help-popup">
@@ -130,11 +130,11 @@ def render():
                     <tr><td>카드매출 변화율</td><td><b>40%</b></td><td>SPH 카드매출</td></tr>
                 </table>
                 <div style="font-size:11px; color:#555;">
-                    📅 <b>비교 기간</b>: 최근 3개월 평균 vs 이전 3개월 평균<br>
-                    📊 <b>분류</b>: +3점↑ 🔥상승 &nbsp;│&nbsp; ±3점 ⚡관찰 &nbsp;│&nbsp; -3점↓ 📉하락
+                     <b>비교 기간</b>: 최근 3개월 평균 vs 이전 3개월 평균<br>
+                     <b>분류</b>: +3점↑ 상승 &nbsp;│&nbsp; ±3점 관찰 &nbsp;│&nbsp; -3점↓ 하락
                 </div>
                 <div class="warn">
-                    ⚠️ 인사이트 탭의 <b>핫플 점수</b>와는 다른 간소화 지표입니다.<br>
+                    인사이트 탭의 <b>핫플 점수</b>와는 다른 간소화 지표입니다.<br>
                     핫플 점수는 5개 지표(방문인구·카페매출·유동인구·매매가·신규설치)를 사용합니다.
                 </div>
             </div>
@@ -416,7 +416,7 @@ def render():
                     )
 
     with profile_col:
-        st.subheader("📊 퀵 프로파일")
+        st.subheader(" 퀵 프로파일")
         if not column_df.empty and sel_col != "cluster":
             top_dc = column_df.nlargest(1, sel_col).iloc[0]
             top_code = top_dc["district_code"]
@@ -429,39 +429,32 @@ def render():
                 st.metric("낮밤인구비", f"{dm['day_night_ratio']:.2f}")
                 hhi_val = dm['consumption_hhi']
                 hhi_label = "다양" if hhi_val < 0.05 else ("보통" if hhi_val < 0.15 else "편중")
-                st.metric("소비집중도(HHI)", f"{hhi_val:.3f} ({hhi_label})")
-                st.markdown("""
-                <div class="score-help-wrap" style="margin-top:-6px;">
-                    <span class="score-help-btn">❓</span>
-                    <div class="score-help-popup" style="width:340px;">
-                        <h4>HHI (허핀달-허쉬만 지수)</h4>
-                        <div style="font-size:11px;color:#555;margin-bottom:8px;">
-                            업종별 카드매출 집중도를 측정합니다.<br>
-                            각 업종 매출 비중의 <b>제곱합</b>으로 계산됩니다.
-                        </div>
-                        <div class="formula">HHI = Σ (업종별 매출 / 전체 매출)²</div>
-                        <table>
-                            <tr><th>HHI 값</th><th>판정</th><th>의미</th></tr>
-                            <tr><td>&lt; 0.05</td><td><b>다양</b></td><td>매출이 여러 업종에 골고루 분산</td></tr>
-                            <tr><td>0.05 ~ 0.15</td><td><b>보통</b></td><td>일반적인 수준</td></tr>
-                            <tr><td>&gt; 0.15</td><td><b>편중</b></td><td>특정 업종에 매출 쏠림</td></tr>
-                        </table>
-                        <div style="font-size:10px;color:#888;">데이터: SPH 카드매출 19개 업종 기준</div>
+                st.markdown(f"""
+                <div style="margin-bottom:8px;">
+                    <div style="font-size:12px;color:#666;margin-bottom:2px;">
+                        소비집중도(HHI)
+                        <span class="score-help-wrap" style="margin-left:4px;">
+                            <span class="score-help-btn">❓</span>
+                            <div class="score-help-popup" style="width:340px;">
+                                <h4>HHI (허핀달-허쉬만 지수)</h4>
+                                <div style="font-size:11px;color:#555;margin-bottom:8px;">
+                                    업종별 카드매출 집중도를 측정합니다.<br>
+                                    각 업종 매출 비중의 <b>제곱합</b>으로 계산됩니다.
+                                </div>
+                                <div class="formula">HHI = Σ (업종별 매출 / 전체 매출)²</div>
+                                <table>
+                                    <tr><th>HHI 값</th><th>판정</th><th>의미</th></tr>
+                                    <tr><td>&lt; 0.05</td><td><b>다양</b></td><td>매출이 여러 업종에 골고루 분산</td></tr>
+                                    <tr><td>0.05 ~ 0.15</td><td><b>보통</b></td><td>일반적인 수준</td></tr>
+                                    <tr><td>&gt; 0.15</td><td><b>편중</b></td><td>특정 업종에 매출 쏠림</td></tr>
+                                </table>
+                                <div style="font-size:10px;color:#888;">데이터: SPH 카드매출 19개 업종 기준</div>
+                            </div>
+                        </span>
                     </div>
+                    <div style="font-size:22px;font-weight:700;">{hhi_val:.3f} ({hhi_label})</div>
                 </div>
                 """, unsafe_allow_html=True)
-
-            # 클러스터 태그 표시
-            if top_code in cluster_labels.index:
-                cid = cluster_labels[top_code]
-                cl_label = cluster_type_map.get(cid, f"유형 {cid}")
-                cl_color = get_cluster_color(cid)
-                st.markdown(
-                    f'<span style="background:rgb({cl_color[0]},{cl_color[1]},{cl_color[2]});'
-                    f'color:white;padding:3px 10px;border-radius:12px;font-size:12px;">'
-                    f'{cl_label}</span>',
-                    unsafe_allow_html=True,
-                )
 
 
 
@@ -486,9 +479,9 @@ def render():
     # [D] 하단 탭
     # ══════════════════════════════════════
     st.divider()
-    tab_insight, tab_sim, tab_persona, tab_ai, tab_cortex = st.tabs([
-        "📈 현황 인사이트", "🧪 what-if",
-        "👤 페르소나", "🤖 AI 예측", "🔮 Cortex 전망"
+    tab_insight, tab_sim, tab_persona, tab_ai = st.tabs([
+        " 현황 인사이트", " what-if",
+        " 페르소나", " AI 예측"
     ])
 
     # ── 탭1: 현황 인사이트 ──
@@ -496,7 +489,7 @@ def render():
         ins1, ins2, ins3 = st.columns(3)
 
         with ins1:
-            st.markdown("**🏢 오피스가 (낮밤인구비 Top 5)**")
+            st.markdown("**오피스가 (낮밤인구비 Top 5)**")
             if "day_night_ratio" in derived.columns:
                 top5_dn = derived.nlargest(5, "day_night_ratio")[["day_night_ratio"]].copy()
                 top5_dn.index = [name_map.get(dc, dc) for dc in top5_dn.index]
@@ -504,7 +497,7 @@ def render():
                 st.dataframe(top5_dn, use_container_width=True)
 
         with ins2:
-            st.markdown("**🛍️ 상업/관광 (방문비중 Top 5)**")
+            st.markdown("**상업/관광 (방문비중 Top 5)**")
             if "visit_ratio" in derived.columns:
                 top5_vr = derived.nlargest(5, "visit_ratio")[["visit_ratio"]].copy()
                 top5_vr.index = [name_map.get(dc, dc) for dc in top5_vr.index]
@@ -513,8 +506,7 @@ def render():
                 st.dataframe(top5_vr, use_container_width=True)
 
         with ins3:
-            st.markdown("**🎯 소비특화 (HHI Top 5)**")
-            st.caption("HHI 높음 = 특정 업종에 매출 집중 (전문 상권)")
+            st.markdown("**소비특화 (HHI Top 5)**")
             if "consumption_hhi" in derived.columns:
                 top5_hhi = derived.nlargest(5, "consumption_hhi")[["consumption_hhi"]].copy()
                 top5_hhi.index = [name_map.get(dc, dc) for dc in top5_hhi.index]
@@ -528,7 +520,7 @@ def render():
         <div style="background:linear-gradient(135deg,#f8f7ff,#eef2ff);border:1px solid #e0e7ff;
                     border-radius:12px;padding:16px 20px;margin-bottom:16px;">
             <div style="font-size:15px;font-weight:700;color:#4338CA;margin-bottom:10px;">
-                🧪 What-if 시뮬레이션
+                 What-if 시뮬레이션
             </div>
             <div style="font-size:12px;color:#555;line-height:1.8;">
                 특정 동네에 가게를 열었을 때 <b>예상 월매출</b>을 추정합니다.<br>
@@ -564,19 +556,19 @@ def render():
         loc_col, opt_col = st.columns(2)
         with loc_col:
             gu_list = sorted(set(n.split(" ")[0] for n in district_labels))
-            sim_gu = st.selectbox("📍 구 선택", gu_list, key="sim_gu")
+            sim_gu = st.selectbox(" 구 선택", gu_list, key="sim_gu")
             dong_in_gu = [n for n in district_labels if n.startswith(sim_gu)]
             sim_district_label = st.selectbox(
-                "📍 동 선택",
+                " 동 선택",
                 dong_in_gu,
                 key="sim_dong",
                 help="선택한 구에 포함된 법정동만 표시됩니다."
             )
         with opt_col:
-            sim_industry = st.selectbox("🏪 업종", list(INDUSTRY_PARAMS.keys()))
-            sim_rent = st.slider("💳 예상 월 임대료 (만원)", 100, 2000, 500, step=50)
+            sim_industry = st.selectbox(" 업종", list(INDUSTRY_PARAMS.keys()))
+            sim_rent = st.slider(" 예상 월 임대료 (만원)", 100, 2000, 500, step=50)
 
-        if st.button("🚀 시뮬레이션 실행", use_container_width=True, type="primary"):
+        if st.button(" 시뮬레이션 실행", use_container_width=True, type="primary"):
             sim_dc = district_codes[district_labels.index(sim_district_label)]
             engine = get_engine("statistical")
             result = engine.simulate(
@@ -623,7 +615,7 @@ def render():
             r1, r2, r3 = st.columns(3)
 
             with r1:
-                st.markdown("##### 💰 예상 월매출")
+                st.markdown("#####  예상 월매출")
                 st.markdown(
                     f'<div style="text-align:center;padding:12px 0;">'
                     f'<div style="font-size:28px;font-weight:700;color:#6366F1;">'
@@ -656,7 +648,7 @@ def render():
                 st.caption(f"범위: {_fmt_krw(result.monthly_revenue_low)} ~ {_fmt_krw(result.monthly_revenue_high)}")
 
             with r2:
-                st.markdown("##### ⏰ 피크 시간대 & 고객층")
+                st.markdown("#####  피크 시간대 & 고객층")
                 if result.peak_hours:
                     for i, ph in enumerate(result.peak_hours, 1):
                         st.markdown(f"{i}. {ph}")
@@ -683,11 +675,35 @@ def render():
                     st.plotly_chart(fig_td, use_container_width=True)
 
             with r3:
-                st.markdown("##### ⚠️ 리스크 요인")
+                st.markdown("#####  리스크 요인")
                 for risk in result.risk_factors:
                     st.markdown(f"- {risk}")
 
-            st.caption("⚠️ 통계 기반 추정치이며, 실제 매출과 차이가 있을 수 있습니다.")
+            st.caption(" 통계 기반 추정치이며, 실제 매출과 차이가 있을 수 있습니다.")
+
+            # ── 디버그: 수식 투입값 확인 ──
+            if result.debug_info:
+                with st.expander(" 계산 과정 상세 (디버그)", expanded=False):
+                    st.markdown(f"**수식**: `{result.debug_info.get('수식', '')}`")
+                    st.markdown("---")
+                    debug_left, debug_right = st.columns(2)
+                    with debug_left:
+                        st.markdown("** 투입 데이터**")
+                        st.markdown(f"- **유동인구 (footfall)**: `{result.debug_info.get('footfall(total_pop)', '?')}`")
+                        st.markdown(f"- **capture_rate**: `{result.debug_info.get('capture_rate', '?')}`")
+                        st.markdown(f"- **객단가 (avg_ticket)**: `{result.debug_info.get('avg_ticket', '?')}`")
+                        st.markdown(f"- **동네 소득**: `{result.debug_info.get('district_income', '?')}`")
+                        st.markdown(f"- **전체 평균 소득**: `{result.debug_info.get('overall_income_avg', '?')}`")
+                    with debug_right:
+                        st.markdown("** 보정 계수**")
+                        st.markdown(f"- **소득 보정**: `{result.debug_info.get('income_correction', '?')}`")
+                        st.markdown(f"- **경쟁 보정**: `{result.debug_info.get('competition_correction', '?')}`")
+                        st.markdown(f"- **낮밤 비율**: `{result.debug_info.get('day_night_ratio', '?')}`")
+                        st.markdown(f"- **HHI**: `{result.debug_info.get('hhi', '?')}`")
+                        st.markdown(f"- **방문 비율**: `{result.debug_info.get('visit_ratio', '?')}`")
+                    st.markdown("---")
+                    st.markdown(f"**결과**: `{result.debug_info.get('mid_raw(원)', '?')}원` → `{result.debug_info.get('mid_man(만원)', '?')}만원`")
+                    st.warning(" **footfall이 수만 이상**이면 pop_agg에서 주중/주말 × 시간대 × 성별 × 연령 등으로 중복 집계된 값일 수 있습니다. 일일 유동인구(수천~1만)가 정상적입니다.")
 
             # ══════════════════════════════════════
             # 시뮬레이션 비교 (자연스럽고 직관적인 UX)
@@ -708,7 +724,7 @@ def render():
 
             elif hist_count >= 2:
                 st.markdown("---")
-                st.markdown("##### 📊 시뮬레이션 비교")
+                st.markdown("##### 시뮬레이션 비교")
                 st.caption("실행한 시뮬레이션 결과를 나란히 비교합니다. 드롭다운으로 비교 대상을 변경할 수 있습니다.")
 
                 hist = st.session_state.sim_history
@@ -784,7 +800,7 @@ def render():
                     <div style="text-align:center;margin-top:8px;padding:8px;
                                 background:#f0fdf4;border-radius:8px;border:1px solid #bbf7d0;">
                         <span style="font-size:13px;color:#166534;">
-                            🏆 수익 기준 <b>{winner['district']} · {winner['industry']}</b>이(가) 더 유리합니다.
+                             수익 기준 <b>{winner['district']} · {winner['industry']}</b>이(가) 더 유리합니다.
                         </span>
                     </div>
                     """, unsafe_allow_html=True)
@@ -1037,7 +1053,6 @@ def render():
                 if _out.industry_trends:
                     st.markdown("**업종별 수요 변화**")
                     for _t in _out.industry_trends[:7]:
-                        _icon = "📈" if _t["net"] > 0 else ("📉" if _t["net"] < 0 else "➡️")
                         st.markdown(
                             f"{_icon} {_t['industry']}: **{_t['direction']}** "
                             f"(상승 {_t['hot_count']} / 하락 {_t['decline_count']})"
@@ -1064,78 +1079,3 @@ def render():
                     except Exception as e:
                         st.error(f"보고서 생성 실패: {e}")
 
-
-    # ── 탭5: Cortex 전망 (신규) ──
-    with tab_cortex:
-        st.markdown("**🔮 Cortex AI 3개월 상권 전망**")
-        st.caption("60개월 유동인구·매출 추이를 Cortex AI가 분석하여 향후 3개월을 예측합니다.")
-
-        # 동네 선택
-        cortex_district = st.selectbox(
-            "분석할 동네", district_labels, index=0, key="cortex_district"
-        )
-
-        if st.button("🔮 전망 분석 시작", key="cortex_start", use_container_width=True):
-            cortex_dc = district_codes[district_labels.index(cortex_district)]
-
-            with st.spinner("Cortex AI가 60개월 데이터를 분석 중..."):
-                try:
-                    from chat_ui import _cortex
-                    from data_loader import run_query, SPH
-
-                    # 유동인구 추이
-                    pop_ts = run_query(f"""
-                        SELECT STANDARD_YEAR_MONTH as MONTH,
-                               ROUND(SUM(RESIDENTIAL_POPULATION)) as RESIDENTIAL,
-                               ROUND(SUM(WORKING_POPULATION)) as WORKING,
-                               ROUND(SUM(VISITING_POPULATION)) as VISITING,
-                               ROUND(SUM(RESIDENTIAL_POPULATION + WORKING_POPULATION + VISITING_POPULATION)) as TOTAL
-                        FROM {SPH}.FLOATING_POPULATION_INFO
-                        WHERE DISTRICT_CODE = '{cortex_dc}'
-                        GROUP BY 1 ORDER BY 1
-                    """)
-
-                    # 카드매출 추이
-                    sales_ts = run_query(f"""
-                        SELECT STANDARD_YEAR_MONTH as MONTH,
-                               ROUND(SUM(TOTAL_SALES)) as TOTAL_SALES,
-                               ROUND(SUM(COFFEE_SALES)) as COFFEE,
-                               ROUND(SUM(FOOD_SALES)) as FOOD
-                        FROM {SPH}.CARD_SALES_INFO
-                        WHERE DISTRICT_CODE = '{cortex_dc}' AND CARD_TYPE = '1'
-                        GROUP BY 1 ORDER BY 1
-                    """)
-
-                    prompt = f"""{cortex_district}의 상권 데이터입니다.
-
-[유동인구 월별 추이 ({len(pop_ts)}개월)]
-{pop_ts.to_string(index=False)}
-
-[카드매출 월별 추이 ({len(sales_ts)}개월)]
-{sales_ts.to_string(index=False)}
-
-위 데이터를 분석하여 다음을 제공하세요:
-
-### 트렌드 분석
-- 상승/하락/정체 판단
-
-### 계절성 패턴
-- 월별 반복 패턴
-
-### 향후 3개월 예측
-| 월 | 예상 유동인구 | 예상 매출 | 근거 |
-|---|---|---|---|
-
-### 출점 추천
-- 이 동네에 가게를 연다면 적합한 업종과 이유
-
-### 리스크
-- 주의해야 할 요인
-
-간결하게 표 위주로 답변하세요. 한국어."""
-
-                    result = _cortex(prompt)
-                    st.markdown(result)
-
-                except Exception as e:
-                    st.error(f"Cortex 전망 오류: {e}")

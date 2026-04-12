@@ -315,7 +315,7 @@ def generate_profile_text(profile: dict) -> str:
 
     if fin["avg_income"] > 0:
         lines.append(
-            f"평균 소득은 {fin['avg_income'] / 10000:,.0f}만원이며, {gap_desc}."
+            f"평균 소득은 {fin['avg_income'] / 10:,.0f}만원이며, {gap_desc}."  # 천원→만원
         )
 
     if tags_str:
@@ -459,19 +459,19 @@ def generate_persona_seeds(
             if weight <= 0:
                 continue
 
-            # 소득 구간 결정 (해당 성별/연령 평균소득 기준)
+            # 소득 구간 결정 (AVERAGE_INCOME 단위: 천원)
             if pd.notna(avg_income) and avg_income > 0:
-                if avg_income < 20_000_000:
+                if avg_income < 20_000:
                     bracket = "~2천만"
-                elif avg_income < 30_000_000:
+                elif avg_income < 30_000:
                     bracket = "2~3천만"
-                elif avg_income < 40_000_000:
+                elif avg_income < 40_000:
                     bracket = "3~4천만"
-                elif avg_income < 50_000_000:
+                elif avg_income < 50_000:
                     bracket = "4~5천만"
-                elif avg_income < 60_000_000:
+                elif avg_income < 60_000:
                     bracket = "5~6천만"
-                elif avg_income < 70_000_000:
+                elif avg_income < 70_000:
                     bracket = "6~7천만"
                 else:
                     bracket = "7천만~"
@@ -491,7 +491,7 @@ def generate_persona_seeds(
                 "job_type": job_label,
                 "income_bracket": bracket,
                 "weight": weight,
-                "avg_income": int(avg_income) if pd.notna(avg_income) else 0,
+                "avg_income": int(avg_income * 1000) if pd.notna(avg_income) else 0,  # 천원→원 변환
             })
 
     return personas
