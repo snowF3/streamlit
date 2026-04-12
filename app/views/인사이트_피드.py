@@ -824,15 +824,20 @@ def render():
         with tab_estate:
             try:
                 re = load_realestate()
-                re_d = re[(re["BJD_CODE"].astype(str).str[:8] == dc) & (re["REGION_LEVEL"] == "emd")]
+                # 1차: EMD(동이름)로 정확 매칭
+                re_d = re[(re["EMD"] == district) & (re["SGG"] == city) & (re["REGION_LEVEL"] == "emd")]
+                # 2차: BJD_CODE 앞 8자리로 매칭 (EMD 매칭 실패 시)
+                if re_d.empty:
+                    re_d = re[(re["BJD_CODE"].astype(str).str[:8] == dc) & (re["REGION_LEVEL"] == "emd")]
                 if not re_d.empty:
                     fig = realestate_trend_chart(re_d, f"{district} 매매/전세 추이")
                     fig.update_layout(height=270)
                     st.plotly_chart(fig, use_container_width=True, key="my_re")
                 else:
+                    # 3차: 시군구 레벨
                     re_sgg = re[(re["SGG"] == city) & (re["REGION_LEVEL"] == "sgg")]
                     if not re_sgg.empty:
-                        fig = realestate_trend_chart(re_sgg, f"{city}(시군구) 추이")
+                        fig = realestate_trend_chart(re_sgg, f"{city}(시군구 평균) 매매/전세 추이")
                         fig.update_layout(height=270)
                         st.plotly_chart(fig, use_container_width=True, key="my_re_sgg")
                     else:
