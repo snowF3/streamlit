@@ -3,7 +3,7 @@ MiroFish Lite v2 — 설정 (클러스터 분석가 구조)
 """
 
 # ── Cortex LLM ──
-CORTEX_MODEL = "openai-gpt-5-mini"
+CORTEX_MODEL = "openai-gpt-5.4"
 
 # ── 시뮬레이션 ──
 DEFAULT_N_ROUNDS = 3
@@ -12,7 +12,7 @@ DEFAULT_N_ROUNDS = 3
 SYSTEM_PROMPT_ANALYST = (
     '당신은 서울 상권 분석 전문가입니다. "{cluster_label}" 유형에 속하는 동네들의 '
     "미래를 예측합니다. 각 동네의 유동인구, 매출, 소비 구조 데이터를 분석하여 "
-    "다음 달 변화를 예측하세요. 반드시 유효한 JSON만 반환하세요."
+    "다음 달 변화를 예측하세요. 반드시 유효한 JSON만 반환하세요. 뻔한 분석이 아닌 심도 깊은 분석으로 미래를 예측해야해."
 )
 
 SYSTEM_PROMPT_REPORT = (

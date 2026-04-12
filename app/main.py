@@ -29,7 +29,7 @@ render_sidebar_chat()
 
 # ── 상단 탭 (2탭) ──
 tab_insight, tab_future = st.tabs([
-    "📊 인사이트", "🔮 미래 예측"
+    "인사이트", "미래 예측"
 ])
 
 with tab_insight:

@@ -481,7 +481,7 @@ def render():
     st.divider()
     tab_insight, tab_sim, tab_persona, tab_ai, tab_cortex = st.tabs([
         " 현황 인사이트", " what-if",
-        " 페르소나", " AI 예측", " Cortex 전망"
+        " 페르소나", " AI 예측"
     ])
 
     # ── 탭1: 현황 인사이트 ──
@@ -489,7 +489,7 @@ def render():
         ins1, ins2, ins3 = st.columns(3)
 
         with ins1:
-            st.markdown("** 오피스가 (낮밤인구비 Top 5)**")
+            st.markdown("**오피스가 (낮밤인구비 Top 5)**")
             if "day_night_ratio" in derived.columns:
                 top5_dn = derived.nlargest(5, "day_night_ratio")[["day_night_ratio"]].copy()
                 top5_dn.index = [name_map.get(dc, dc) for dc in top5_dn.index]
@@ -497,7 +497,7 @@ def render():
                 st.dataframe(top5_dn, use_container_width=True)
 
         with ins2:
-            st.markdown("** 상업/관광 (방문비중 Top 5)**")
+            st.markdown("**상업/관광 (방문비중 Top 5)**")
             if "visit_ratio" in derived.columns:
                 top5_vr = derived.nlargest(5, "visit_ratio")[["visit_ratio"]].copy()
                 top5_vr.index = [name_map.get(dc, dc) for dc in top5_vr.index]
@@ -506,7 +506,7 @@ def render():
                 st.dataframe(top5_vr, use_container_width=True)
 
         with ins3:
-            st.markdown("** 소비특화 (HHI Top 5)**")
+            st.markdown("**소비특화 (HHI Top 5)**")
             if "consumption_hhi" in derived.columns:
                 top5_hhi = derived.nlargest(5, "consumption_hhi")[["consumption_hhi"]].copy()
                 top5_hhi.index = [name_map.get(dc, dc) for dc in top5_hhi.index]
@@ -520,7 +520,7 @@ def render():
         <div style="background:linear-gradient(135deg,#f8f7ff,#eef2ff);border:1px solid #e0e7ff;
                     border-radius:12px;padding:16px 20px;margin-bottom:16px;">
             <div style="font-size:15px;font-weight:700;color:#4338CA;margin-bottom:10px;">
-                🧪 What-if 시뮬레이션
+                 What-if 시뮬레이션
             </div>
             <div style="font-size:12px;color:#555;line-height:1.8;">
                 특정 동네에 가게를 열었을 때 <b>예상 월매출</b>을 추정합니다.<br>
@@ -724,7 +724,7 @@ def render():
 
             elif hist_count >= 2:
                 st.markdown("---")
-                st.markdown("##### 📊 시뮬레이션 비교")
+                st.markdown("##### 시뮬레이션 비교")
                 st.caption("실행한 시뮬레이션 결과를 나란히 비교합니다. 드롭다운으로 비교 대상을 변경할 수 있습니다.")
 
                 hist = st.session_state.sim_history

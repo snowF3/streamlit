@@ -30,11 +30,11 @@ def _container(**kwargs):
         return st.container()
 
 def _render_forecast_cards(pop_agg, card_agg, region_master, show_title=True):
-    """🔮 3개월 전망 예측 카드"""
+    """ 3개월 전망 예측 카드"""
     import numpy as np
 
     if show_title:
-        st.markdown("### 🔮 3개월 전망")
+        st.markdown("###  3개월 전망")
 
     months = sorted(pop_agg["STANDARD_YEAR_MONTH"].unique())
     if len(months) < 3:
@@ -84,7 +84,7 @@ def _render_forecast_cards(pop_agg, card_agg, region_master, show_title=True):
     c1, c2, c3 = st.columns(3)
 
     with c1:
-        st.markdown("**🔥 상승 예측**")
+        st.markdown("** 상승 예측**")
         for _, row in rising.iterrows():
             st.markdown(f"""<div style="background:rgba(239,68,68,0.1);padding:8px 12px;border-radius:8px;
                 margin:4px 0;border-left:3px solid #EF4444;">
@@ -94,7 +94,7 @@ def _render_forecast_cards(pop_agg, card_agg, region_master, show_title=True):
             </div>""", unsafe_allow_html=True)
 
     with c2:
-        st.markdown("**⚡ 관찰 필요**")
+        st.markdown("** 관찰 필요**")
         for _, row in neutral.iterrows():
             st.markdown(f"""<div style="background:rgba(245,158,11,0.1);padding:8px 12px;border-radius:8px;
                 margin:4px 0;border-left:3px solid #F59E0B;">
@@ -104,7 +104,7 @@ def _render_forecast_cards(pop_agg, card_agg, region_master, show_title=True):
             </div>""", unsafe_allow_html=True)
 
     with c3:
-        st.markdown("**📉 하락 예측**")
+        st.markdown("** 하락 예측**")
         for _, row in falling.iterrows():
             st.markdown(f"""<div style="background:rgba(59,130,246,0.1);padding:8px 12px;border-radius:8px;
                 margin:4px 0;border-left:3px solid #3B82F6;">
@@ -115,26 +115,36 @@ def _render_forecast_cards(pop_agg, card_agg, region_master, show_title=True):
 
     # ── Cortex AI 심층 예측 (동네 선택) ──
     st.markdown("---")
-    st.markdown("### 🧠 AI 심층 예측")
+    st.markdown("""<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+        <span style="font-size:17px;font-weight:700;">AI 심층 예측</span>
+        <span style="font-size:11px;color:#888;background:rgba(128,128,128,0.08);padding:2px 8px;border-radius:10px;">Cortex AI</span>
+    </div>""", unsafe_allow_html=True)
     if not rising.empty:
         _ai_options = {row["name"]: dc for dc, row in rising.iterrows()}
-        _ai_selected = st.selectbox(
-            "분석할 동네 선택", list(_ai_options.keys()), index=0, key="ai_deep_district"
-        )
+
+        col_sel, col_btn = st.columns([3, 1])
+        with col_sel:
+            _ai_selected = st.selectbox(
+                "분석할 동네 선택", list(_ai_options.keys()), index=0,
+                key="ai_deep_district", label_visibility="collapsed",
+            )
+        with col_btn:
+            run_ai = st.button("예측 실행", key="ai_deep_run", use_container_width=True)
+
         top_dc = _ai_options[_ai_selected]
         top_name = _ai_selected
 
-        try:
-            from chat_ui import _cortex
-            ts_df = pop_agg[pop_agg["DISTRICT_CODE"] == top_dc].groupby("STANDARD_YEAR_MONTH").agg({
-                "RESIDENTIAL_POPULATION": "sum", "WORKING_POPULATION": "sum", "VISITING_POPULATION": "sum"
-            }).reset_index()
-            ts_df["TOTAL"] = ts_df["RESIDENTIAL_POPULATION"] + ts_df["WORKING_POPULATION"] + ts_df["VISITING_POPULATION"]
-            ts_df = ts_df.sort_values("STANDARD_YEAR_MONTH")
-            ts_str = ts_df[["STANDARD_YEAR_MONTH", "TOTAL"]].to_string(index=False)
+        if run_ai:
+            try:
+                from chat_ui import _cortex
+                ts_df = pop_agg[pop_agg["DISTRICT_CODE"] == top_dc].groupby("STANDARD_YEAR_MONTH").agg({
+                    "RESIDENTIAL_POPULATION": "sum", "WORKING_POPULATION": "sum", "VISITING_POPULATION": "sum"
+                }).reset_index()
+                ts_df["TOTAL"] = ts_df["RESIDENTIAL_POPULATION"] + ts_df["WORKING_POPULATION"] + ts_df["VISITING_POPULATION"]
+                ts_df = ts_df.sort_values("STANDARD_YEAR_MONTH")
+                ts_str = ts_df[["STANDARD_YEAR_MONTH", "TOTAL"]].to_string(index=False)
 
-            with st.expander(f"🔮 {top_name} — Cortex AI 3개월 예측 (클릭하여 보기)"):
-                with st.spinner("Cortex 분석 중..."):
+                with st.spinner("Cortex AI 분석 중..."):
                     prompt = f"""{top_name}의 월별 총 유동인구 데이터입니다.
 
 {ts_str}
@@ -149,30 +159,20 @@ def _render_forecast_cards(pop_agg, card_agg, region_master, show_title=True):
 간결하게 표와 핵심만 답변하세요. 한국어로."""
 
                     ai_forecast = _cortex(prompt)
-                    st.markdown(ai_forecast)
-        except Exception as e:
-            st.caption(f"AI 예측 오류: {e}")
+
+                st.markdown(f"""<div style="background:linear-gradient(135deg,rgba(139,92,246,0.06),rgba(59,130,246,0.06));
+                    border:1px solid rgba(139,92,246,0.15);border-radius:12px;padding:16px 20px;margin-top:8px;">
+                    <div style="font-size:13px;font-weight:600;color:#7C3AED;margin-bottom:10px;">
+                        📊 {top_name} — 3개월 예측 결과
+                    </div>
+                </div>""", unsafe_allow_html=True)
+                st.markdown(ai_forecast)
+            except Exception as e:
+                st.error(f"AI 예측 오류: {e}")
+        else:
+            st.caption(f"🔮 **{top_name}** 을 선택하고 예측 실행 버튼을 눌러주세요.")
     else:
         st.caption("상승 예측 동네가 없어 AI 심층 예측을 건너뜁니다.")
-
-    # 렌탈 수요 예측
-    st.markdown("---")
-    st.markdown("### 📦 렌탈 수요 시그널")
-    try:
-        rental = run_query(f"""
-            SELECT RENTAL_SUB_CATEGORY as ITEM,
-                   SUM(CONTRACT_COUNT) as CONTRACTS
-            FROM {AJD}.V06_RENTAL_CATEGORY_TRENDS
-            WHERE YEAR_MONTH = (SELECT MAX(YEAR_MONTH) FROM {AJD}.V06_RENTAL_CATEGORY_TRENDS)
-            GROUP BY 1 ORDER BY CONTRACTS DESC LIMIT 5
-        """)
-        if not rental.empty:
-            cols = st.columns(len(rental))
-            for i, (_, row) in enumerate(rental.iterrows()):
-                with cols[i]:
-                    st.metric(row["ITEM"], f"{int(row['CONTRACTS']):,}건")
-    except Exception:
-        st.caption("렌탈 데이터 로드 오류")
 
 
 def render():
@@ -734,7 +734,7 @@ def render():
                 if not income_d.empty and "AVERAGE_INCOME" in income_d.columns:
                     avg = income_d["AVERAGE_INCOME"].values[0]
                     if pd.notna(avg) and avg > 0:
-                        st.metric("평균소득", f"{avg/1e4:,.0f}만원")
+                        st.metric("평균소득", f"{avg/10:,.0f}만원")
             with m_cols[2]:
                 if not income_d.empty and "total_customers" in income_d.columns:
                     cust = income_d["total_customers"].values[0]

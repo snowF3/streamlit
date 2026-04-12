@@ -299,7 +299,7 @@ def _answer(q, hist_list, pctx="", sel_d=""):
 - TOTAL_SALES_KRW: 총 카드매출 (원 단위)
 - FOOD_SALES_KRW: 식음료 매출
 - COFFEE_SALES_KRW: 커피/카페 매출
-- AVG_INCOME_KRW: 평균 소득 (원 단위)
+- AVG_INCOME_KRW: 평균 연소득 (천원 단위, 예: 30000 = 3,000만원)
 - GROWTH_PCT: 방문인구 증가율 (%)
 - CONTRACTS: 계약 건수 (아정당 렌탈/인터넷)
 - CVR_PCT: 전환율 (%)

@@ -224,7 +224,7 @@ def render():
             if not income_d.empty and "AVERAGE_INCOME" in income_d.columns:
                 avg = income_d["AVERAGE_INCOME"].values[0]
                 if pd.notna(avg) and avg > 0:
-                    st.metric("평균소득", f"{avg/1e4:,.0f}만")
+                    st.metric("평균소득", f"{avg/10:,.0f}만")
         with c4:
             if not income_d.empty and "total_customers" in income_d.columns:
                 st.metric("고객수", f"{income_d['total_customers'].values[0]:,.0f}")

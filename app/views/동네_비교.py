@@ -72,7 +72,7 @@ def render():
     latest_income = selected_month
 
     # ── 비교 테이블 ──
-    st.subheader("📊 핵심 지표 비교")
+    st.subheader("핵심 지표 비교")
 
     compare_data = []
     for i, dc in enumerate(selected_codes):
@@ -95,7 +95,7 @@ def render():
         inc = income_agg[(income_agg["DISTRICT_CODE"] == dc) & (income_agg["STANDARD_YEAR_MONTH"] == latest_income)]
         if not inc.empty:
             if "AVERAGE_INCOME" in inc.columns and pd.notna(inc["AVERAGE_INCOME"].values[0]):
-                row["평균소득(만원)"] = int(inc["AVERAGE_INCOME"].values[0] / 1e4)
+                row["평균소득(만원)"] = int(inc["AVERAGE_INCOME"].values[0] / 10)  # 천원→만원
             if "AVERAGE_SCORE" in inc.columns and pd.notna(inc["AVERAGE_SCORE"].values[0]):
                 row["신용점수"] = int(inc["AVERAGE_SCORE"].values[0])
             if "total_customers" in inc.columns:
@@ -150,7 +150,7 @@ def render():
 
     # ── 유동인구 비교 바 차트 ──
     st.divider()
-    st.subheader("🚶 유동인구 구성 비교")
+    st.subheader("유동인구 구성 비교")
 
     pop_compare = []
     for i, dc in enumerate(selected_codes):
