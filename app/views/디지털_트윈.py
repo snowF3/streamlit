@@ -83,6 +83,15 @@ def render():
 
     derived = _calc_derived(pop_time, card_agg, pop_agg, income_agg, selected_month)
 
+    # ── 3개월 전망 카드 ──
+    try:
+        from views.인사이트_피드 import _render_forecast_cards
+        _render_forecast_cards(pop_agg, card_agg, region_master)
+    except Exception:
+        pass
+
+    st.markdown("---")
+
     # 클러스터링 (캐싱)
     @st.cache_data(ttl=3600)
     def _compute_clusters(_pop_time, _card_agg, _pop_demo, _derived, _year_month):

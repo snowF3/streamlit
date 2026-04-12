@@ -198,15 +198,7 @@ def render():
     card_agg = load_card_sales_agg()
     hp = load_hotplace_monthly()
 
-    # ══════════════════════════════════════
-    # 🔮 예측 카드 섹션 (최상단)
-    # ══════════════════════════════════════
-    try:
-        _render_forecast_cards(pop_agg, card_agg, region_master)
-    except Exception:
-        pass
-
-    st.markdown("---")
+    # 예측 카드는 미래 예측 탭으로 이동됨
 
     data_districts = set(hp["DISTRICT_CODE"].unique())
     rm = region_master[region_master["district_code"].isin(data_districts)].copy()
