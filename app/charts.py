@@ -88,31 +88,46 @@ def population_flow_chart(pop_time_df, title="시간대별 유동인구"):
 
     fig = go.Figure()
     fig.add_trace(go.Scatter(
-        x=labels, y=agg["RESIDENTIAL_POPULATION"],
+        x=labels, y=agg["RESIDENTIAL_POPULATION"].tolist(),
         mode='lines', stackgroup='one', name='거주인구',
-        line=dict(color='#636EFA'), fillcolor='rgba(99, 110, 250, 0.4)'
+        line=dict(color='#636EFA'), fillcolor='rgba(99, 110, 250, 0.4)',
+        hovertemplate='%{x}<br>거주: %{y:,.0f}명<extra></extra>',
     ))
     fig.add_trace(go.Scatter(
-        x=labels, y=agg["WORKING_POPULATION"],
+        x=labels, y=agg["WORKING_POPULATION"].tolist(),
         mode='lines', stackgroup='one', name='직장인구',
-        line=dict(color='#EF553B'), fillcolor='rgba(239, 85, 59, 0.4)'
+        line=dict(color='#EF553B'), fillcolor='rgba(239, 85, 59, 0.4)',
+        hovertemplate='%{x}<br>직장: %{y:,.0f}명<extra></extra>',
     ))
     fig.add_trace(go.Scatter(
-        x=labels, y=agg["VISITING_POPULATION"],
+        x=labels, y=agg["VISITING_POPULATION"].tolist(),
         mode='lines', stackgroup='one', name='방문인구',
-        line=dict(color='#00CC96'), fillcolor='rgba(0, 204, 150, 0.4)'
+        line=dict(color='#00CC96'), fillcolor='rgba(0, 204, 150, 0.4)',
+        hovertemplate='%{x}<br>방문: %{y:,.0f}명<extra></extra>',
     ))
     fig.update_layout(title=title, xaxis_title="시간대", yaxis_title="인구(명)", height=350)
     return fig
 
 
-def population_pyramid(pop_demo_df, title="인구 피라미드"):
-    """성별×연령대 인구 피라미드"""
+def population_pyramid(pop_demo_df, title="인구 피라미드", pop_type="전체"):
+    """성별×연령대 인구 피라미드. pop_type: 전체/거주/직장/방문"""
     if pop_demo_df.empty:
         return go.Figure().update_layout(title="데이터 없음")
 
     df = pop_demo_df.copy()
-    df["TOTAL_POP"] = df["RESIDENTIAL_POPULATION"] + df["WORKING_POPULATION"] + df["VISITING_POPULATION"]
+
+    type_col_map = {
+        "전체": None,  # 합산
+        "거주": "RESIDENTIAL_POPULATION",
+        "직장": "WORKING_POPULATION",
+        "방문": "VISITING_POPULATION",
+    }
+
+    if pop_type in type_col_map and type_col_map[pop_type]:
+        col = type_col_map[pop_type]
+        df["TOTAL_POP"] = df[col]
+    else:
+        df["TOTAL_POP"] = df["RESIDENTIAL_POPULATION"] + df["WORKING_POPULATION"] + df["VISITING_POPULATION"]
 
     male = df[df["GENDER"] == "M"].groupby("AGE_GROUP")["TOTAL_POP"].sum()
     female = df[df["GENDER"] == "F"].groupby("AGE_GROUP")["TOTAL_POP"].sum()
@@ -143,26 +158,57 @@ def population_pyramid(pop_demo_df, title="인구 피라미드"):
 
 
 def realestate_trend_chart(re_df, title="매매/전세 시세 추이"):
-    """매매가/전세가 12년 라인 차트"""
+    """매매가/전세가 라인 차트"""
     if re_df.empty:
         return go.Figure().update_layout(title="데이터 없음")
 
-    df = re_df.sort_values("YYYYMMDD")
+    df = re_df.sort_values("YYYYMMDD").copy().reset_index(drop=True)
+
+    # YYYYMMDD → 날짜 라벨 (카테고리로 사용)
+    def _parse_date(x):
+        s = str(x)
+        if "-" in s:
+            parts = s.split("-")
+            return f"{parts[0]}-{parts[1]}"
+        elif len(s) >= 6:
+            return f"{s[:4]}-{s[4:6]}"
+        return s
+    df["date_label"] = df["YYYYMMDD"].apply(_parse_date)
+
     fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=df["YYYYMMDD"], y=df["MEME_PRICE_PER_SUPPLY_PYEONG"],
-        mode='lines', name='매매 평단가',
-        line=dict(color='#EF553B', width=2)
-    ))
-    fig.add_trace(go.Scatter(
-        x=df["YYYYMMDD"], y=df["JEONSE_PRICE_PER_SUPPLY_PYEONG"],
-        mode='lines', name='전세 평단가',
-        line=dict(color='#636EFA', width=2)
-    ))
+
+    if "MEME_PRICE_PER_SUPPLY_PYEONG" in df.columns:
+        meme = df[df["MEME_PRICE_PER_SUPPLY_PYEONG"].notna() & (df["MEME_PRICE_PER_SUPPLY_PYEONG"] > 0)]
+        if not meme.empty:
+            fig.add_trace(go.Scatter(
+                x=meme["date_label"].tolist(),
+                y=meme["MEME_PRICE_PER_SUPPLY_PYEONG"].tolist(),
+                mode='lines', name='매매 평단가',
+                line=dict(color='#EF553B', width=2),
+                hovertemplate='%{x}<br>매매: %{y:,.0f}만원/평<extra></extra>',
+            ))
+
+    if "JEONSE_PRICE_PER_SUPPLY_PYEONG" in df.columns:
+        jeonse = df[df["JEONSE_PRICE_PER_SUPPLY_PYEONG"].notna() & (df["JEONSE_PRICE_PER_SUPPLY_PYEONG"] > 0)]
+        if not jeonse.empty:
+            fig.add_trace(go.Scatter(
+                x=jeonse["date_label"].tolist(),
+                y=jeonse["JEONSE_PRICE_PER_SUPPLY_PYEONG"].tolist(),
+                mode='lines', name='전세 평단가',
+                line=dict(color='#636EFA', width=2),
+                hovertemplate='%{x}<br>전세: %{y:,.0f}만원/평<extra></extra>',
+            ))
+
+    if len(fig.data) == 0:
+        return go.Figure().update_layout(title=f"{title} — 데이터 없음")
+
     fig.update_layout(
         title=title,
-        xaxis_title="날짜", yaxis_title="만원/평",
-        height=350
+        xaxis=dict(title="", type="category", tickangle=-45, dtick=12),
+        yaxis=dict(title="만원/평"),
+        height=300,
+        legend=dict(orientation="h", y=-0.2),
+        hovermode="x unified",
     )
     return fig
 
@@ -183,14 +229,19 @@ def income_distribution_chart(income_row, title="소득 분포"):
     values = []
     for col, label in income_cols.items():
         if col in income_row.index and pd.notna(income_row[col]):
+            v = float(income_row[col])
             labels.append(label)
-            values.append(float(income_row[col]) * 100)
+            # 이미 비율(0~1)이면 *100, 이미 %면 그대로
+            values.append(v * 100 if v <= 1 else v)
 
     if not labels:
         return go.Figure().update_layout(title="데이터 없음")
 
-    fig = go.Figure(go.Bar(x=labels, y=values, marker_color='#636EFA'))
-    fig.update_layout(title=title, xaxis_title="소득 구간", yaxis_title="비율 (%)", height=300)
+    fig = go.Figure(go.Bar(x=labels, y=values, marker_color='#636EFA',
+                           text=[f"{v:.1f}%" for v in values], textposition="outside"))
+    fig.update_layout(title=title, xaxis_title="소득 구간 (연소득)",
+                      yaxis_title="비율 (%)", yaxis_range=[0, max(values)*1.3 if values else 100],
+                      height=300)
     return fig
 
 
