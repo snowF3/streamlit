@@ -1,5 +1,5 @@
 """
-MiroFish Lite — 설정 (Snowflake Cortex 환경)
+MiroFish Lite v2 — 설정 (클러스터 분석가 구조)
 """
 
 # ── Cortex LLM ──
@@ -7,20 +7,18 @@ CORTEX_MODEL = "openai-gpt-5-mini"
 
 # ── 시뮬레이션 ──
 DEFAULT_N_ROUNDS = 3
-DEFAULT_N_AGENTS = 100
-DEFAULT_TOP_SIMILAR = 5
 
-# ── 그래프 엣지 타입 ──
-EDGE_SIMILAR = "SIMILAR_TO"
-EDGE_CONSUMES = "CONSUMES_AT"
-EDGE_BELONGS = "BELONGS_TO"
+# ── 프롬프트 ──
+SYSTEM_PROMPT_ANALYST = (
+    '당신은 서울 상권 분석 전문가입니다. "{cluster_label}" 유형에 속하는 동네들의 '
+    "미래를 예측합니다. 각 동네의 유동인구, 매출, 소비 구조 데이터를 분석하여 "
+    "다음 달 변화를 예측하세요. 반드시 유효한 JSON만 반환하세요."
+)
 
-# ── 에이전트 액션 ──
-ACTION_STAY = "stay_and_spend"
-ACTION_VISIT = "visit_neighbor"
-ACTION_REDUCE = "reduce_spending"
-ACTION_RELOCATE = "relocate"
-VALID_ACTIONS = {ACTION_STAY, ACTION_VISIT, ACTION_REDUCE, ACTION_RELOCATE}
+SYSTEM_PROMPT_REPORT = (
+    "당신은 서울 상권 분석 전문가입니다. AI 에이전트 시뮬레이션 결과를 바탕으로 "
+    "한국어로 예측 보고서를 작성합니다. 데이터에 근거한 구체적 분석을 제공하세요."
+)
 
 # ── 업종 ──
 INDUSTRY_KOR = {
@@ -42,14 +40,3 @@ TIME_SLOT_KOR = {
     "T15": "오후(15~18)", "T18": "저녁(18~21)", "T21": "심야(21~24)",
     "T24": "기타",
 }
-
-# ── 프롬프트 ──
-SYSTEM_PROMPT_AGENT = (
-    "당신은 서울에 거주하는 시민입니다. 매달 어디를 방문하고, 얼마를 소비하고, "
-    "이사할지를 결정합니다. 반드시 유효한 JSON만 반환하세요. 추가 설명 없이 순수 JSON만."
-)
-
-SYSTEM_PROMPT_REPORT = (
-    "당신은 서울 상권 분석 전문가입니다. AI 에이전트 시뮬레이션 결과를 바탕으로 "
-    "한국어로 예측 보고서를 작성합니다. 데이터에 근거한 구체적 분석을 제공하세요."
-)
