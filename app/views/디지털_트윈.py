@@ -86,22 +86,66 @@ def render():
     except Exception:
         pass
 
-    with st.expander("❓ 3개월 전망 점수 안내", expanded=False):
-        st.markdown("""
-**점수 산정 공식**
-> `전망 점수 = 방문인구 변화율 × 60% + 카드매출 변화율 × 40%`
-
-| 지표 | 가중치 | 데이터 소스 |
-|---|---|---|
-| 방문인구 변화율 | 60% | SPH 유동인구 (`VISITING_POPULATION`) |
-| 카드매출 변화율 | 40% | SPH 카드매출 (`TOTAL_SALES`) |
-
-- **비교 기간**: 최근 3개월 평균 vs 이전 3개월 평균
-- **분류 기준**: +3점 이상 → 🔥 상승 / ±3점 이내 → ⚡ 관찰 / -3점 이하 → 📉 하락
-
-> ⚠️ **인사이트 탭의 핫플 점수와는 다른 간소화 지표입니다.**
-> 핫플 점수는 5개 지표(방문인구 25% + 카페매출 20% + 유동인구 20% + 매매가 20% + 신규설치 15%)를 사용합니다.
-""")
+    st.markdown("""
+    <style>
+    .score-help-wrap {
+        position: relative; display: inline-block; margin: 2px 0 4px;
+    }
+    .score-help-btn {
+        font-size: 12px; color: #888; cursor: help;
+        background: rgba(128,128,128,0.08); border: 1px solid rgba(128,128,128,0.15);
+        border-radius: 14px; padding: 3px 10px 3px 6px;
+        transition: all 0.2s;
+    }
+    .score-help-btn:hover { color: #6366F1; border-color: #6366F1; background: rgba(99,102,241,0.06); }
+    .score-help-popup {
+        visibility: hidden; opacity: 0;
+        position: absolute; left: 0; top: 100%; margin-top: 6px; z-index: 9999;
+        width: 420px; padding: 16px 18px;
+        background: white; border: 1px solid #e0e0e0; border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+        font-size: 12px; line-height: 1.7; color: #333;
+        transition: opacity 0.2s, visibility 0.2s;
+    }
+    .score-help-wrap:hover .score-help-popup { visibility: visible; opacity: 1; }
+    .score-help-popup h4 { font-size: 13px; font-weight: 700; margin: 0 0 8px; color: #333; }
+    .score-help-popup .formula {
+        background: #f8f7ff; border: 1px solid #e8e6ff; border-radius: 6px;
+        padding: 6px 10px; font-family: monospace; font-size: 11px; color: #6366F1;
+        margin-bottom: 10px;
+    }
+    .score-help-popup table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    .score-help-popup th {
+        text-align: left; font-size: 11px; font-weight: 600; color: #666;
+        border-bottom: 1px solid #eee; padding: 4px 6px;
+    }
+    .score-help-popup td { font-size: 11px; padding: 4px 6px; border-bottom: 1px solid #f5f5f5; }
+    .score-help-popup .warn {
+        background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px;
+        padding: 6px 10px; font-size: 11px; color: #92400e; margin-top: 8px;
+    }
+    </style>
+    <div class="score-help-wrap">
+        <span class="score-help-btn">❓ 점수 안내</span>
+        <div class="score-help-popup">
+            <h4>3개월 전망 점수 산정</h4>
+            <div class="formula">전망 점수 = 방문인구 변화율 × 60% + 카드매출 변화율 × 40%</div>
+            <table>
+                <tr><th>지표</th><th>가중치</th><th>소스</th></tr>
+                <tr><td>방문인구 변화율</td><td><b>60%</b></td><td>SPH 유동인구</td></tr>
+                <tr><td>카드매출 변화율</td><td><b>40%</b></td><td>SPH 카드매출</td></tr>
+            </table>
+            <div style="font-size:11px; color:#555;">
+                📅 <b>비교 기간</b>: 최근 3개월 평균 vs 이전 3개월 평균<br>
+                📊 <b>분류</b>: +3점↑ 🔥상승 &nbsp;│&nbsp; ±3점 ⚡관찰 &nbsp;│&nbsp; -3점↓ 📉하락
+            </div>
+            <div class="warn">
+                ⚠️ 인사이트 탭의 <b>핫플 점수</b>와는 다른 간소화 지표입니다.<br>
+                핫플 점수는 5개 지표(방문인구·카페매출·유동인구·매매가·신규설치)를 사용합니다.
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
     st.markdown("---")
 
@@ -252,6 +296,9 @@ def render():
                 info = cl_color_map.get(dc, {"fill_color": [128, 128, 128, 160], "metric_value": "데이터 없음"})
                 feat["properties"]["fill_color"] = info["fill_color"]
                 feat["properties"]["metric_value"] = info["metric_value"]
+                # pydeck tooltip은 top-level 속성만 참조 → 복사
+                feat["name"] = feat["properties"]["name"]
+                feat["metric_value"] = str(info["metric_value"])
                 active_features.append(feat)
         else:
             norm_map = column_df.set_index("district_code")[["norm", "metric_value"]].to_dict("index")
@@ -268,6 +315,9 @@ def render():
                 r, g, b = 255, int(255 * (1 - n * 0.8)), int(255 * (1 - n))
                 a = int(120 + n * 100)
                 feat["properties"]["fill_color"] = [r, g, b, a]
+                # pydeck tooltip은 top-level 속성만 참조 → 복사
+                feat["name"] = feat["properties"]["name"]
+                feat["metric_value"] = str(info["metric_value"])
                 active_features.append(feat)
 
         geojson_data["features"] = active_features
@@ -331,10 +381,12 @@ def render():
             layers=[layer],
             initial_view_state=view,
             tooltip={
-                "html": '<div style="padding:6px 10px;font-family:sans-serif;">' +
-                        '<div style="font-size:13px;font-weight:700;margin-bottom:3px;">{name}</div>' +
-                        '<div style="font-size:12px;color:#555;">' + f'{selected_metric}: ' + '<b>{metric_value}</b></div>' +
-                        '</div>',
+                "html": '<div style="padding:6px 10px;font-family:sans-serif;">'
+                        '<div style="font-size:14px;font-weight:700;margin-bottom:4px;">'
+                        '{name}</div>'
+                        '<div style="font-size:12px;color:#555;">'
+                        f'{selected_metric}: '
+                        '<b>{metric_value}</b></div></div>',
                 "style": {
                     "backgroundColor": "white",
                     "color": "#333",
