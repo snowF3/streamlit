@@ -64,7 +64,8 @@ def render():
     # income_detail은 페르소나에서만 사용 — 실패해도 계속 진행
     try:
         income_detail = load_income_detail()
-    except Exception:
+    except Exception as e:
+        st.caption(f"ℹ️ 소득 상세 데이터 미사용: {e}")
         income_detail = pd.DataFrame()
 
     # 사용 가능한 법정동
@@ -742,12 +743,18 @@ def render():
                         centroids_df=centroids, snapshot_month=int(selected_month),
                     )
 
-                    # 페르소나 생성 (income_detail 있으면 실데이터, 없으면 파생지표 기반 합성)
+                    # 페르소나 생성 (income_detail → 실데이터, 실패 시 파생지표 합성)
                     _personas = []
+                    _ym = int(selected_month)
                     if not income_detail.empty:
+                        # year_month 타입 통일 (int)
+                        _id = income_detail.copy()
+                        _id["STANDARD_YEAR_MONTH"] = _id["STANDARD_YEAR_MONTH"].astype(int)
+                        _ia = income_agg.copy()
+                        _ia["STANDARD_YEAR_MONTH"] = _ia["STANDARD_YEAR_MONTH"].astype(int)
                         for _dc in data_districts:
                             try:
-                                _seeds = generate_persona_seeds(income_detail, income_agg, _dc, int(selected_month))
+                                _seeds = generate_persona_seeds(_id, _ia, _dc, _ym)
                                 _personas.extend(_seeds)
                             except Exception:
                                 pass
