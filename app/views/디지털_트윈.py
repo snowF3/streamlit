@@ -1029,6 +1029,7 @@ def render():
                 if _out.industry_trends:
                     st.markdown("**업종별 수요 변화**")
                     for _t in _out.industry_trends[:7]:
+                        _icon = "📈" if _t["direction"] == "상승" else "📉"
                         st.markdown(
                             f"{_icon} {_t['industry']}: **{_t['direction']}** "
                             f"(상승 {_t['hot_count']} / 하락 {_t['decline_count']})"
