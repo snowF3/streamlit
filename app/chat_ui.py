@@ -389,20 +389,7 @@ def _answer(q, hist_list, pctx="", sel_d=""):
 
 def _do_ask(q, pctx, sel_d):
     st.session_state.chat_messages.append({"role": "user", "content": q})
-    status = st.sidebar.empty()
-    status.caption("질문을 분석하고 있습니다...")
-
-    r = _answer(q, st.session_state.chat_messages[:-1], pctx, sel_d)
-
-    status.caption("분석 결과를 정리하고 있습니다...")
-
-    st.session_state.chat_messages.append({
-        "role": "assistant",
-        "content": r["answer"],
-        "intent": r["intent"],
-        "district": r.get("district", ""),
-    })
-    status.empty()
+    st.session_state.chat_loading = True
     _safe_rerun()
 
 
@@ -452,8 +439,51 @@ def render_sidebar_chat():
         st.session_state.chat_messages = []
     if "pending_q" not in st.session_state:
         st.session_state.pending_q = None
+    if "chat_loading" not in st.session_state:
+        st.session_state.chat_loading = False
+
+    # 로딩 중이면 실제 답변 생성
+    if st.session_state.chat_loading:
+        with st.sidebar:
+            st.markdown("""<div style="padding:4px 0 2px;">
+                <span style="font-size:13px;font-weight:700;">XR-AI</span>
+                <span style="font-size:9px;color:#555;margin-left:4px;">상권 분석</span>
+            </div>""", unsafe_allow_html=True)
+            st.markdown("---")
+            # 이전 대화 표시
+            for msg in st.session_state.chat_messages:
+                if msg["role"] == "user":
+                    st.markdown(f"""<div style="text-align:right;margin:8px 0 4px;">
+                        <span style="background:#6366F1;color:white;padding:6px 10px;
+                        border-radius:10px 10px 3px 10px;font-size:12px;display:inline-block;max-width:90%;">
+                        {msg['content']}</span></div>""", unsafe_allow_html=True)
+                else:
+                    st.markdown(msg['content'])
+                    st.markdown("")
+
+            st.caption("분석 중입니다...")
+
+        # 답변 생성
+        last_q = st.session_state.chat_messages[-1]["content"] if st.session_state.chat_messages else ""
+        r = _answer(last_q, st.session_state.chat_messages[:-1], "", "")
+        st.session_state.chat_messages.append({
+            "role": "assistant",
+            "content": r["answer"],
+            "intent": r["intent"],
+            "district": r.get("district", ""),
+        })
+        st.session_state.chat_loading = False
+        _safe_rerun()
+        return
 
     with st.sidebar:
+
+        # 사이드바 표 가로 스크롤 CSS
+        st.markdown("""<style>
+        [data-testid="stSidebar"] table { font-size: 11px !important; }
+        [data-testid="stSidebar"] .stMarkdown { overflow-x: auto; }
+        [data-testid="stSidebar"] { min-width: 320px; }
+        </style>""", unsafe_allow_html=True)
 
         # ── 대화 없을 때 ──
         if not st.session_state.chat_messages:
