@@ -673,6 +673,14 @@ def render():
                     unsafe_allow_html=True,
                 )
 
+                # 디버깅: 데이터 확인
+                with st.expander("데이터 확인 (디버깅)", expanded=False):
+                    st.write(f"_hp_dc 행 수: {len(_hp_dc)}, my_hp_until 행 수: {len(my_hp_until)}")
+                    st.write(f"cumsum 마지막: {my_hp_until['cum_score'].iloc[-1] if not my_hp_until.empty else 'N/A'}")
+                    st.write(f"sum: {100 + my_hp_until['hotplace_score'].sum() if not my_hp_until.empty else 'N/A'}")
+                    if not my_hp_until.empty:
+                        st.dataframe(my_hp_until[["STANDARD_YEAR_MONTH", "hotplace_score", "cum_score"]].tail(5))
+
                 # 점수 추이 미니 차트 (같은 _hp_dc 사용)
                 if len(my_hp_until) > 1:
                     trend = my_hp_until.copy()
@@ -749,7 +757,7 @@ def render():
                         if not pop_prev_d.empty:
                             pv = pop_prev_d[cn].values[0]
                             if pv > 0:
-                                d = f"전월대비 {(v - pv) / pv * 100:+.1f}%"
+                                d = f"{(v - pv) / pv * 100:+.1f}%"
                         st.metric(lb, f"{v:,.0f}", d)
 
             m_cols = st.columns(3)
