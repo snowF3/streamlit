@@ -411,7 +411,7 @@ def render():
     st.divider()
     tab_insight, tab_sim, tab_persona, tab_ai = st.tabs([
         "📈 현황 인사이트", "🧪 What-if 시뮬레이션",
-        "👤 페르소나", "🤖 AI 예측 (Coming Soon)"
+        "👤 페르소나", "🤖 AI 예측"
     ])
 
     # ── 탭1: 현황 인사이트 ──
@@ -697,15 +697,145 @@ def render():
         else:
             st.info("이 동네의 소득/직업 상세 데이터가 없어 페르소나를 생성할 수 없습니다.")
 
-    # ── 탭4: AI 예측 (Coming Soon) ──
+    # ── 탭4: AI 에이전트 예측 (MiroFish Lite) ──
     with tab_ai:
-        st.info(
-            "🤖 **AI 에이전트 기반 예측 (Phase 3 예정)**\n\n"
-            "MiroFish AI 에이전트가 수천 개의 가상 페르소나를 시뮬레이션하여 "
-            "미래 상권 변화를 예측합니다.\n\n"
-            "- 법정동별 AI 페르소나 생성 ✅ (Phase 2 완료)\n"
-            "- 클러스터 기반 유사 동네 매칭 ✅ (Phase 2 완료)\n"
-            "- 에이전트 간 상호작용 시뮬레이션 (Phase 3)\n"
-            "- 상권 변화 예측 보고서 자동 생성 (Phase 3)"
+        st.markdown(
+            "**MiroFish Lite** — AI 에이전트가 가상 페르소나로 미래 상권 변화를 시뮬레이션합니다."
         )
+
+        # 시뮬레이션 설정
+        ai_c1, ai_c2, ai_c3 = st.columns(3)
+        with ai_c1:
+            ai_n_rounds = st.selectbox("예측 기간 (개월)", [2, 3, 4, 5], index=1, key="ai_rounds")
+        with ai_c2:
+            ai_n_agents = st.selectbox("에이전트 수", [50, 100, 150], index=1, key="ai_agents")
+        with ai_c3:
+            ai_scope = st.radio("범위", ["전체 동네", "선택 동네"], horizontal=True, key="ai_scope")
+
+        ai_target_dcs = None
+        if ai_scope == "선택 동네":
+            _district_opts = sorted(data_districts)
+            _district_labels = [name_map.get(dc, dc) for dc in _district_opts]
+            ai_sel = st.multiselect("동네 선택", options=_district_opts,
+                                     format_func=lambda dc: name_map.get(dc, dc),
+                                     max_selections=10, key="ai_districts")
+            ai_target_dcs = ai_sel if ai_sel else None
+
+        if st.button("AI 예측 실행", type="primary", use_container_width=True, key="ai_run"):
+            with st.spinner("MiroFish 시뮬레이션 준비 중..."):
+                try:
+                    from profile_generator import generate_all_profiles, generate_persona_seeds
+                    from clustering import find_similar_districts
+                    from mirofish import run_prediction
+                    from mirofish.report import generate_surge_text
+
+                    # 프로파일 생성
+                    _profiles = generate_all_profiles(
+                        derived_metrics=derived, card_agg_df=card_agg,
+                        pop_time_df=pop_time, income_agg_df=income_agg,
+                        centroids_df=centroids, snapshot_month=int(selected_month),
+                    )
+
+                    # 페르소나 생성
+                    _personas = []
+                    for _dc in data_districts:
+                        try:
+                            _seeds = generate_persona_seeds(income_detail, income_agg, _dc, int(selected_month))
+                            _personas.extend(_seeds)
+                        except Exception:
+                            pass
+
+                    # 클러스터 데이터
+                    _sim_map = {}
+                    if not feature_matrix.empty:
+                        for _dc in feature_matrix.index:
+                            _sim_df = find_similar_districts(feature_matrix, _dc, top_n=5)
+                            _sim_map[_dc] = list(zip(
+                                _sim_df["district_code"].tolist(),
+                                [round(float(s), 3) for s in _sim_df["similarity"].tolist()],
+                            ))
+                    _dc_cluster = {}
+                    if not cluster_labels.empty:
+                        for _dc, _cid in cluster_labels.items():
+                            _dc_cluster[_dc] = {
+                                "cluster_id": int(_cid),
+                                "cluster_label": cluster_type_map.get(int(_cid), f"유형 {_cid}"),
+                            }
+                    _cluster_data = {
+                        "similar_map": _sim_map,
+                        "district_cluster": _dc_cluster,
+                        "type_map": {int(k): v for k, v in cluster_type_map.items()},
+                    }
+                except Exception as e:
+                    st.error(f"데이터 준비 실패: {e}")
+                    st.stop()
+
+            # 시뮬레이션 실행
+            _prog = st.progress(0, text="시뮬레이션 시작...")
+
+            def _on_progress(rnd, total, msg):
+                _prog.progress(rnd / total, text=msg)
+
+            try:
+                _result = run_prediction(
+                    profiles=_profiles, personas=_personas,
+                    cluster_data=_cluster_data,
+                    n_rounds=ai_n_rounds, n_agents=ai_n_agents,
+                    base_month=int(selected_month),
+                    district_codes=ai_target_dcs,
+                    progress_callback=_on_progress,
+                )
+                _prog.progress(1.0, text="완료!")
+                st.session_state["mirofish_result"] = _result
+                st.session_state["mirofish_profiles"] = _profiles
+            except Exception as e:
+                _prog.empty()
+                st.error(f"시뮬레이션 실패: {e}")
+
+        # ── 결과 표시 ──
+        if "mirofish_result" in st.session_state:
+            _res = st.session_state["mirofish_result"]
+            _surge = _res["surge_predictions"]
+            _trends = _res["trend_report"]
+            _sim_out = _res["simulation_output"]
+
+            st.markdown("---")
+            st.markdown(f"##### 시뮬레이션 결과 — {_sim_out.n_agents}명 에이전트, {_sim_out.n_rounds}개월 예측")
+
+            if _surge:
+                st.markdown("**급등 예측 순위**")
+                _rows = []
+                for _i, _sp in enumerate(_surge):
+                    _rows.append({
+                        "순위": _i + 1, "동네": _sp.name, "시그널": _sp.signal,
+                        "방문자": f"{_sp.visit_growth:+.1f}%",
+                        "매출": f"{_sp.spending_growth:+.1f}%",
+                        "인구이동": f"{_sp.net_migration:+.0f}명",
+                        "주력 업종": _sp.top_industry,
+                    })
+                st.dataframe(pd.DataFrame(_rows), use_container_width=True, hide_index=True)
+
+            _rc1, _rc2 = st.columns(2)
+            with _rc1:
+                if _trends.industry_shifts:
+                    st.markdown("**업종별 수요 변화**")
+                    for _s in _trends.industry_shifts[:7]:
+                        _em = "+" if _s["growth"] > 0 else ""
+                        st.markdown(f"{'📈' if _s['growth'] > 0 else '📉'} {_s['industry']}: **{_em}{_s['growth']:.1f}%**")
+            with _rc2:
+                if _trends.population_flow:
+                    st.markdown("**인구 이동**")
+                    for _f in _trends.population_flow[:7]:
+                        _em2 = "🟢" if _f["direction"] == "유입" else "🔴"
+                        st.markdown(f"{_em2} {_f['name']}: {_f['direction']} **{abs(_f['net_migration']):.0f}명**")
+
+            st.markdown("---")
+            if st.button("AI 분석 보고서 생성", key="ai_report"):
+                with st.spinner("Cortex AI가 보고서 작성 중..."):
+                    try:
+                        from mirofish.report import generate_surge_text
+                        _report = generate_surge_text(_surge, _trends, _sim_out)
+                        st.markdown(_report)
+                    except Exception as e:
+                        st.error(f"보고서 생성 실패: {e}")
 

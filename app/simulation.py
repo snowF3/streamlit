@@ -182,11 +182,15 @@ class StatisticalEngine(SimulationEngine):
 
 
 class MiroFishEngine(SimulationEngine):
-    """Phase 3: 에이전트 기반 시뮬레이션 (향후 구현)"""
+    """MiroFish Lite AI 에이전트 기반 시뮬레이션"""
+
+    def __init__(self):
+        from mirofish.engine_adapter import MiroFishLiteEngine
+        self._delegate = MiroFishLiteEngine()
 
     @property
     def engine_name(self) -> str:
-        return "MiroFish AI 엔진"
+        return self._delegate.engine_name
 
     def simulate(
         self,
@@ -199,10 +203,9 @@ class MiroFishEngine(SimulationEngine):
         year_month=None,
         rent: float = 0,
     ) -> SimulationResult:
-        # Phase 3에서 구현: 페르소나 로드 → 방문 확률 × 소비액 시뮬레이션
-        raise NotImplementedError(
-            "MiroFish 연동은 Phase 3에서 구현 예정입니다. "
-            "현재는 StatisticalEngine을 사용하세요."
+        return self._delegate.simulate(
+            district_code, industry, pop_time_df, pop_agg_df,
+            income_agg_df, derived_metrics, year_month, rent,
         )
 
 
