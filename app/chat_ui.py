@@ -5,7 +5,7 @@ import streamlit as st
 import json, re
 from data_loader import run_query, SPH, RICHGO, AJD
 
-CORTEX_MODEL = "openai-gpt-5-mini"
+CORTEX_MODEL = "openai-gpt-5.4"
 
 
 def _safe_rerun():
@@ -23,19 +23,31 @@ def _cortex(prompt):
 
 
 def _classify(q, h=""):
-    p = f"""Classify this question. Return JSON only.
-Previous: {h[:200]}
-Question: {q}
-{{"intent":"lookup|compare|trend|simulate|recommend|hotplace|marketing|rental|forecast|realestate","district":"district_name|null","category":"business_type|null"}}"""
+    p = f"""아래 질문을 분류하세요. JSON만 반환.
+
+이전 대화: {h[:300]}
+질문: {q}
+
+intent 설명:
+- simulate: 출점, 카페/음식점 차리기, 상권 분석, 매출 시뮬레이션, "~하면 어떨까"
+- lookup: 특정 동네 유동인구/매출/소득 조회
+- compare: 2개 이상 동네 비교 ("A vs B", "A와 B")
+- trend: 추이, 변화, 최근 몇 개월
+- forecast: 미래 예측, 전망, "3개월 후"
+- recommend: 업종 추천, "뭘 팔면", "어떤 업종"
+- hotplace: 핫플, 뜨는 동네, Top 5
+- marketing: 마케팅 채널, ROI, 광고
+- rental: 렌탈 트렌드, 정수기
+- realestate: 부동산, 매매가, 전세
+- screen: 현재 화면 요약, "지금 보이는 거", "이 화면"
+
+{{"intent":"...", "district":"법정동명 또는 null", "category":"업종 또는 null"}}"""
     resp = _cortex(p)
     try:
         m = re.search(r'\{.*\}', resp, re.DOTALL)
         if m: return json.loads(m.group())
     except: pass
     return {"intent": "lookup", "district": None, "category": None}
-
-
-# intent에 marketing, rental, forecast 추가
 
 
 def _qpop(d):
@@ -218,7 +230,7 @@ def _answer(q, hist_list, pctx="", sel_d=""):
             parts.append(f"=== {x} ===\n[유동인구]\n{_qpop(x)}\n[카드매출]\n{_qsales(x)}")
         data = "\n\n".join(parts) if parts else "비교 대상 없음"
     elif intent == "simulate" and d:
-        data = f"[유동인구]\n{_qpop(d)}\n\n[카드매출]\n{_qsales(d)}\n\n[소득]\n{_qincome(d)}"
+        data = f"[{d} 유동인구]\n{_qpop(d)}\n\n[{d} 카드매출 (업종별)]\n{_qsales(d)}\n\n[{d} 소득/자산]\n{_qincome(d)}\n\n[{d} 부동산 시세]\n{_qrealestate(d)}"
     elif intent == "recommend":
         data = (f"[카드매출]\n{_qsales(d)}\n\n[소득]\n{_qincome(d)}\n\n[렌탈 트렌드]\n{_qrental()}") if d else f"[핫플]\n{_qhot(5)}\n\n[렌탈 트렌드]\n{_qrental()}"
     elif intent == "marketing":
@@ -274,14 +286,19 @@ def _answer(q, hist_list, pctx="", sel_d=""):
             data = f"[{d} 12개월 추이]\n{df.to_string(index=False)}"
         except Exception as e:
             data = f"추이 조회 오류: {e}"
+    elif intent == "screen":
+        data = f"[현재 화면 정보]\n{pctx}" if pctx else "현재 화면 정보가 전달되지 않았습니다."
     elif d:
-        data = f"[유동인구]\n{_qpop(d)}\n\n[카드매출]\n{_qsales(d)}\n\n[소득]\n{_qincome(d)}"
+        data = f"[{d} 유동인구]\n{_qpop(d)}\n\n[{d} 카드매출]\n{_qsales(d)}\n\n[{d} 소득]\n{_qincome(d)}"
     else:
-        data = "지역명을 특정할 수 없습니다."
+        # district 없으면 핫플 랭킹이라도 제공
+        data = f"[전체 핫플 랭킹]\n{_qhot(5)}\n\n[현재 화면]\n{pctx}" if pctx else f"[전체 핫플 랭킹]\n{_qhot(5)}"
 
     ctx = f"[현재 화면] {pctx}" if pctx else ""
 
-    prompt = f"""당신은 서울 동네 데이터 분석 전문가입니다.
+    prompt = f"""당신은 XR-AI 상권 분석 전문가입니다.
+타겟 사용자: 소상공인, 프랜차이즈 출점 담당자, 팝업 위치 기획자.
+목적: 출점 의사결정을 데이터 기반으로 도와주는 것입니다.
 
 {ctx}
 
@@ -348,7 +365,10 @@ def render_sidebar_chat():
 
     with st.sidebar:
         # 헤더
-        st.markdown("""<div style="padding:6px 0 4px;font-size:13px;font-weight:600;">AI 에이전트</div>""", unsafe_allow_html=True)
+        st.markdown("""<div style="padding:6px 0 2px;">
+            <span style="font-size:14px;font-weight:700;">XR-AI</span>
+            <span style="font-size:10px;color:#888;margin-left:4px;">상권 분석 에이전트</span>
+        </div>""", unsafe_allow_html=True)
         st.markdown("---")
 
         # 대화 히스토리 (위에)
@@ -368,12 +388,12 @@ def render_sidebar_chat():
         if not st.session_state.chat_messages:
             st.caption("💡 추천 질문")
             qs = [
-                ("신당동의 유동인구와 카드매출을 분석해줘", "🔍 동네 분석"),
-                ("방문인구 증가율 Top 5 동네와 성장 이유", "🔥 핫플 예측"),
-                ("잠원동 3개월 후 상권 전망을 예측해줘", "🔮 미래 예측"),
-                ("어떤 마케팅 채널이 ROI가 높은지 분석해줘", "📢 마케팅 ROI"),
-                ("요즘 렌탈 시장에서 어떤 품목이 뜨고 있어?", "📦 렌탈 트렌드"),
-                ("잠원동 부동산 시세 추이 보여줘", "🏠 부동산 시세"),
+                ("잠원동에 카페 출점하려는데 상권 분석해줘", "☕ 출점 분석"),
+                ("방문인구 증가율 Top 5 동네는? 팝업 후보지 추천", "📍 팝업 후보지"),
+                ("신당동 3개월 후 상권 전망 예측해줘", "🔮 미래 예측"),
+                ("신당동과 여의도동 상권 비교해줘", "⚖️ 상권 비교"),
+                ("서초구에서 프랜차이즈 출점하기 좋은 동네와 업종은?", "🏪 출점 추천"),
+                ("최근 어떤 마케팅 채널의 고객 유입이 효과적이야?", "📢 마케팅 분석"),
             ]
 
             # session_state로 버튼 클릭 추적 (연쇄 방지)
