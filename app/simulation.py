@@ -90,7 +90,8 @@ class StatisticalEngine(SimulationEngine):
         else:
             return SimulationResult(0, 0, 0, [], "데이터 없음", ["해당 동네 데이터가 없습니다"])
 
-        footfall = dm.get("total_pop", 0)
+        # total_pop은 시간대(7)×주중주말(2)=14 교차 합산이므로 일 평균으로 환산
+        footfall = dm.get("total_pop", 0) / 14
         day_night = dm.get("day_night_ratio", 1.0)
         hhi = dm.get("consumption_hhi", 0)
         visit_ratio = dm.get("visit_ratio", 0)
@@ -115,11 +116,12 @@ class StatisticalEngine(SimulationEngine):
                 dc_time["total"] = (dc_time["RESIDENTIAL_POPULATION"]
                                     + dc_time["WORKING_POPULATION"]
                                     + dc_time["VISITING_POPULATION"])
-                slot_pop = dc_time.groupby("TIME_SLOT")["total"].sum()
+                # 주중주말(2) 합산 → 일 평균으로 환산
+                slot_pop = dc_time.groupby("TIME_SLOT")["total"].sum() / 2
                 for slot, weight in time_weights.items():
                     slot_foot = slot_pop.get(slot, 0)
                     time_revenue_dist[slot] = round(
-                        slot_foot * params["capture_rate"] * params["avg_ticket"] * weight * income_correction / 10000, 1
+                        slot_foot * params["capture_rate"] * params["avg_ticket"] * weight * income_correction * 30 / 10000, 1
                     )
 
         # ── 경쟁 강도 보정 (HHI 기반) ──
@@ -180,7 +182,7 @@ class StatisticalEngine(SimulationEngine):
             competition_index=competition_index,
             time_revenue_dist=time_revenue_dist,
             debug_info={
-                "footfall(total_pop)": f"{footfall:,.0f}",
+                "footfall(일평균유동인구)": f"{footfall:,.0f}",
                 "capture_rate": params["capture_rate"],
                 "avg_ticket": f"{params['avg_ticket']:,}원",
                 "income_correction": round(income_correction, 3),

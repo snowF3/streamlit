@@ -94,7 +94,7 @@ def _render_forecast_cards(pop_agg, card_agg, region_master, show_title=True):
             </div>""", unsafe_allow_html=True)
 
     with c2:
-        st.markdown("** 관찰 필요**")
+        st.markdown("**관찰 필요**")
         for _, row in neutral.iterrows():
             st.markdown(f"""<div style="background:rgba(245,158,11,0.1);padding:8px 12px;border-radius:8px;
                 margin:4px 0;border-left:3px solid #F59E0B;">
@@ -104,7 +104,7 @@ def _render_forecast_cards(pop_agg, card_agg, region_master, show_title=True):
             </div>""", unsafe_allow_html=True)
 
     with c3:
-        st.markdown("** 하락 예측**")
+        st.markdown("**하락 예측**")
         for _, row in falling.iterrows():
             st.markdown(f"""<div style="background:rgba(59,130,246,0.1);padding:8px 12px;border-radius:8px;
                 margin:4px 0;border-left:3px solid #3B82F6;">
