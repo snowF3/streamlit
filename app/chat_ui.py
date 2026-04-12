@@ -5,7 +5,7 @@ import streamlit as st
 import json, re
 from data_loader import run_query, SPH, RICHGO, AJD
 
-CORTEX_MODEL = "openai-gpt-5-mini"
+CORTEX_MODEL = "openai-gpt-5.4"
 
 
 def _safe_rerun():
