@@ -876,17 +876,17 @@ def render():
 
             st.markdown("---")
 
-            # 렌탈 트렌드
+            # 렌탈 트렌드 (최근 6개월 누적)
             try:
                 rental = run_query(f"""
                     SELECT RENTAL_SUB_CATEGORY as ITEM,
                            SUM(CONTRACT_COUNT) as CONTRACTS
                     FROM {AJD}.V06_RENTAL_CATEGORY_TRENDS
-                    WHERE YEAR_MONTH = (SELECT MAX(YEAR_MONTH) FROM {AJD}.V06_RENTAL_CATEGORY_TRENDS)
+                    WHERE YEAR_MONTH >= (SELECT MAX(YEAR_MONTH) - 6 FROM {AJD}.V06_RENTAL_CATEGORY_TRENDS)
                     GROUP BY 1 ORDER BY CONTRACTS DESC LIMIT 5
                 """)
                 if not rental.empty:
-                    st.markdown("**전국 인기 렌탈 Top 5**")
+                    st.markdown("**전국 인기 렌탈 Top 5** (최근 6개월)")
                     for _, row in rental.iterrows():
                         st.markdown(f"- {row['ITEM']}: {int(row['CONTRACTS']):,}건")
                 else:
@@ -896,21 +896,20 @@ def render():
 
             st.markdown("---")
 
-            # 인터넷 신규설치 추이
+            # 인터넷 신규설치 추이 (전체)
             try:
-                # INSTALL_CITY에서 구 이름 매칭 (서초구, 중구, 영등포구)
-                city_short = city.replace("구", "")  # "서초" 로도 매칭 시도
+                city_short = city.replace("구", "")
                 install = run_query(f"""
                     SELECT YEAR_MONTH, SUM(OPEN_COUNT) as INSTALLS
                     FROM {AJD}.V05_REGIONAL_NEW_INSTALL
                     WHERE (INSTALL_CITY LIKE '%{city}%' OR INSTALL_CITY LIKE '%{city_short}%')
-                    GROUP BY 1 ORDER BY 1 DESC LIMIT 12
+                      AND OPEN_COUNT > 0
+                    GROUP BY 1 ORDER BY 1
                 """)
                 if not install.empty:
-                    install_sorted = install.sort_values("YEAR_MONTH")
                     fig_inst = go.Figure(go.Scatter(
-                        x=install_sorted["YEAR_MONTH"].astype(str),
-                        y=install_sorted["INSTALLS"].tolist(),
+                        x=install["YEAR_MONTH"].astype(str).tolist(),
+                        y=install["INSTALLS"].tolist(),
                         mode='lines+markers', line=dict(color='#6366F1', width=2),
                         fill='tozeroy', fillcolor='rgba(99,102,241,0.1)',
                         name='신규설치',
@@ -919,7 +918,7 @@ def render():
                     fig_inst.update_layout(
                         title=f"{city} 인터넷 신규설치 추이",
                         height=250, yaxis_title="건수",
-                        xaxis=dict(type="category", dtick=2),
+                        xaxis=dict(type="category", dtick=3),
                     )
                     st.plotly_chart(fig_inst, use_container_width=True, key="my_install")
                 else:
