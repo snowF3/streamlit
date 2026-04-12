@@ -475,19 +475,19 @@ def render_sidebar_chat():
             </div>
             """, unsafe_allow_html=True)
 
-            st.markdown('<div style="font-size:10px;font-weight:600;color:#666;margin:0 0 4px;">출점 분석</div>', unsafe_allow_html=True)
+            st.caption("출점 분석")
             if st.button("잠원동 카페 출점 상권 분석", key="q_0", use_container_width=True):
                 st.session_state.pending_q = "잠원동에 카페 출점하려는데 유동인구, 매출, 소득, 부동산 데이터로 상권 분석해줘"
             if st.button("서초구 프랜차이즈 추천 동네·업종", key="q_1", use_container_width=True):
                 st.session_state.pending_q = "서초구에서 프랜차이즈 출점하기 좋은 동네와 업종은?"
 
-            st.markdown('<div style="font-size:10px;font-weight:600;color:#666;margin:8px 0 4px;">예측 · 비교</div>', unsafe_allow_html=True)
+            st.caption("예측 · 비교")
             if st.button("방문인구 증가율 Top 5 팝업 후보", key="q_2", use_container_width=True):
                 st.session_state.pending_q = "방문인구 증가율 Top 5 동네는? 팝업 후보지 추천해줘"
             if st.button("신당동 3개월 후 상권 전망", key="q_3", use_container_width=True):
                 st.session_state.pending_q = "신당동 3개월 후 상권 전망 예측해줘"
 
-            st.markdown('<div style="font-size:10px;font-weight:600;color:#666;margin:8px 0 4px;">데이터 분석</div>', unsafe_allow_html=True)
+            st.caption("데이터 분석")
             if st.button("신당동 vs 여의도동 상권 비교", key="q_4", use_container_width=True):
                 st.session_state.pending_q = "신당동과 여의도동의 유동인구와 매출을 비교 분석해줘"
             if st.button("마케팅 채널별 고객 유입 효과", key="q_5", use_container_width=True):
