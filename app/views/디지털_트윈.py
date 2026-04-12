@@ -79,25 +79,17 @@ def render():
     def _calc_derived(_pop_time, _card_agg, _pop_agg, _income_agg, year_month):
         return calc_derived_metrics(_pop_time, _card_agg, _pop_agg, _income_agg, year_month)
 
-    # ── 3개월 전망 카드 ──
-    try:
-        from views.인사이트_피드 import _render_forecast_cards
-        _render_forecast_cards(pop_agg, card_agg, region_master)
-    except Exception:
-        pass
-
+    # ── 3개월 전망 카드 (제목 + ❓ 가이드 통합) ──
     st.markdown("""
     <style>
-    .score-help-wrap {
-        position: relative; display: inline-block; margin: 2px 0 4px;
-    }
+    .forecast-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .forecast-header h3 { margin: 0; padding: 0; font-size: 1.2em; }
+    .score-help-wrap { position: relative; display: inline-block; }
     .score-help-btn {
-        font-size: 12px; color: #888; cursor: help;
-        background: rgba(128,128,128,0.08); border: 1px solid rgba(128,128,128,0.15);
-        border-radius: 14px; padding: 3px 10px 3px 6px;
-        transition: all 0.2s;
+        font-size: 14px; cursor: help; opacity: 0.4;
+        transition: opacity 0.2s;
     }
-    .score-help-btn:hover { color: #6366F1; border-color: #6366F1; background: rgba(99,102,241,0.06); }
+    .score-help-btn:hover { opacity: 1; }
     .score-help-popup {
         visibility: hidden; opacity: 0;
         position: absolute; left: 0; top: 100%; margin-top: 6px; z-index: 9999;
@@ -125,27 +117,36 @@ def render():
         padding: 6px 10px; font-size: 11px; color: #92400e; margin-top: 8px;
     }
     </style>
-    <div class="score-help-wrap">
-        <span class="score-help-btn">❓ 점수 안내</span>
-        <div class="score-help-popup">
-            <h4>3개월 전망 점수 산정</h4>
-            <div class="formula">전망 점수 = 방문인구 변화율 × 60% + 카드매출 변화율 × 40%</div>
-            <table>
-                <tr><th>지표</th><th>가중치</th><th>소스</th></tr>
-                <tr><td>방문인구 변화율</td><td><b>60%</b></td><td>SPH 유동인구</td></tr>
-                <tr><td>카드매출 변화율</td><td><b>40%</b></td><td>SPH 카드매출</td></tr>
-            </table>
-            <div style="font-size:11px; color:#555;">
-                📅 <b>비교 기간</b>: 최근 3개월 평균 vs 이전 3개월 평균<br>
-                📊 <b>분류</b>: +3점↑ 🔥상승 &nbsp;│&nbsp; ±3점 ⚡관찰 &nbsp;│&nbsp; -3점↓ 📉하락
-            </div>
-            <div class="warn">
-                ⚠️ 인사이트 탭의 <b>핫플 점수</b>와는 다른 간소화 지표입니다.<br>
-                핫플 점수는 5개 지표(방문인구·카페매출·유동인구·매매가·신규설치)를 사용합니다.
+    <div class="forecast-header">
+        <h3>🔮 3개월 전망</h3>
+        <div class="score-help-wrap">
+            <span class="score-help-btn">❓</span>
+            <div class="score-help-popup">
+                <h4>3개월 전망 점수 산정</h4>
+                <div class="formula">전망 점수 = 방문인구 변화율 × 60% + 카드매출 변화율 × 40%</div>
+                <table>
+                    <tr><th>지표</th><th>가중치</th><th>소스</th></tr>
+                    <tr><td>방문인구 변화율</td><td><b>60%</b></td><td>SPH 유동인구</td></tr>
+                    <tr><td>카드매출 변화율</td><td><b>40%</b></td><td>SPH 카드매출</td></tr>
+                </table>
+                <div style="font-size:11px; color:#555;">
+                    📅 <b>비교 기간</b>: 최근 3개월 평균 vs 이전 3개월 평균<br>
+                    📊 <b>분류</b>: +3점↑ 🔥상승 &nbsp;│&nbsp; ±3점 ⚡관찰 &nbsp;│&nbsp; -3점↓ 📉하락
+                </div>
+                <div class="warn">
+                    ⚠️ 인사이트 탭의 <b>핫플 점수</b>와는 다른 간소화 지표입니다.<br>
+                    핫플 점수는 5개 지표(방문인구·카페매출·유동인구·매매가·신규설치)를 사용합니다.
+                </div>
             </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
+
+    try:
+        from views.인사이트_피드 import _render_forecast_cards
+        _render_forecast_cards(pop_agg, card_agg, region_master, show_title=False)
+    except Exception:
+        pass
 
     st.markdown("---")
 
@@ -443,52 +444,7 @@ def render():
                     unsafe_allow_html=True,
                 )
 
-            # 미니 시간대별 차트
-            dc_time_all = pop_time[
-                (pop_time["STANDARD_YEAR_MONTH"] == selected_month)
-                & (pop_time["WEEKDAY_WEEKEND"] == weekday_code)
-                & (pop_time["DISTRICT_CODE"] == top_code)
-            ].copy()
-            if not dc_time_all.empty:
-                # 시간대별 집계 (중복 행 방지)
-                dc_agg = dc_time_all.groupby("TIME_SLOT")[
-                    ["RESIDENTIAL_POPULATION", "WORKING_POPULATION", "VISITING_POPULATION"]
-                ].sum()
-                dc_chart = dc_agg.reindex(time_slots).fillna(0)
-                dc_chart["시간대"] = [TIME_SLOT_KOR.get(t, t) for t in dc_chart.index]
-                dc_chart["total"] = (dc_chart["RESIDENTIAL_POPULATION"]
-                                     + dc_chart["WORKING_POPULATION"]
-                                     + dc_chart["VISITING_POPULATION"])
 
-                fig_mini = go.Figure()
-                fig_mini.add_trace(go.Scatter(
-                    x=dc_chart["시간대"], y=dc_chart["RESIDENTIAL_POPULATION"],
-                    name="거주", stackgroup="one",
-                    line=dict(width=0.5, color="#6366F1"),
-                    fillcolor="rgba(99,102,241,0.3)",
-                ))
-                fig_mini.add_trace(go.Scatter(
-                    x=dc_chart["시간대"], y=dc_chart["WORKING_POPULATION"],
-                    name="직장", stackgroup="one",
-                    line=dict(width=0.5, color="#22D3EE"),
-                    fillcolor="rgba(34,211,238,0.3)",
-                ))
-                fig_mini.add_trace(go.Scatter(
-                    x=dc_chart["시간대"], y=dc_chart["VISITING_POPULATION"],
-                    name="방문", stackgroup="one",
-                    line=dict(width=0.5, color="#F43F5E"),
-                    fillcolor="rgba(244,63,94,0.3)",
-                ))
-                fig_mini.update_layout(
-                    height=200, margin=dict(l=0, r=0, t=20, b=0),
-                    showlegend=True, legend=dict(orientation="h", y=-0.3),
-                    xaxis=dict(tickfont=dict(size=9)),
-                    yaxis=dict(tickfont=dict(size=9), tickformat=","),
-                )
-                st.plotly_chart(fig_mini, use_container_width=True)
-                st.caption(f"📊 데이터: {len(dc_time_all)}행 → {len(dc_chart)}시간대, 합계: {dc_chart['total'].sum():,.0f}명")
-            else:
-                st.caption("⚠️ 해당 월·요일의 시간대별 데이터가 없습니다.")
 
         elif sel_col == "cluster" and not column_df.empty:
             # 클러스터 모드: 각 클러스터별 동네 수 표시

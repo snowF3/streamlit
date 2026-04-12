@@ -29,11 +29,12 @@ def _container(**kwargs):
     except TypeError:
         return st.container()
 
-def _render_forecast_cards(pop_agg, card_agg, region_master):
+def _render_forecast_cards(pop_agg, card_agg, region_master, show_title=True):
     """🔮 3개월 전망 예측 카드"""
     import numpy as np
 
-    st.markdown("### 🔮 3개월 전망")
+    if show_title:
+        st.markdown("### 🔮 3개월 전망")
 
     months = sorted(pop_agg["STANDARD_YEAR_MONTH"].unique())
     if len(months) < 3:
