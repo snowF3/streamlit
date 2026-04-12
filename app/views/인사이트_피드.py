@@ -570,13 +570,14 @@ def render():
         district = sel_row["district_kor"]
 
         all_months = sorted(pop_agg["STANDARD_YEAR_MONTH"].unique(), reverse=True)
-        # 선택된 년월 기준
-        latest_month = selected_ym if selected_ym in all_months else (all_months[0] if all_months else None)
+        # 내 동네 독립 기준월
+        my_ym_labels = [f"{str(m)[:4]}년 {int(str(m)[4:6])}월" for m in all_months]
+        my_ym_label = st.selectbox("기준 년월", my_ym_labels, index=0, label_visibility="collapsed", key="my_nb_month")
+        latest_month = all_months[my_ym_labels.index(my_ym_label)]
         ym_idx = all_months.index(latest_month) if latest_month in all_months else 0
         prev_month = all_months[ym_idx + 1] if ym_idx + 1 < len(all_months) else None
-        ml_str = f"{str(latest_month)[:4]}년 {int(str(latest_month)[4:6])}월" if latest_month else ""
-        st.caption(f"{city} {district} · {ml_str}")
-        st.caption("↑ 사이드바에서 '동네 프로파일'로 이동")
+        st.caption(f"{city} {district} · {my_ym_label}")
+        st.caption("↑ 사이드바에서 '상권 분석'으로 이동")
 
         if not latest_month:
             st.stop()
@@ -775,7 +776,8 @@ def render():
                 pop_demo = load_population_demo()
                 pd_d = pop_demo[(pop_demo["DISTRICT_CODE"] == dc) & (pop_demo["STANDARD_YEAR_MONTH"] == latest_month)]
                 if not pd_d.empty:
-                    fig = population_pyramid(pd_d, f"{district} 인구 피라미드")
+                    pop_type = st.radio("인구 유형", ["전체", "거주", "직장", "방문"], horizontal=True, key="pyramid_type")
+                    fig = population_pyramid(pd_d, f"{district} 인구 피라미드 ({pop_type})", pop_type=pop_type)
                     fig.update_layout(height=270)
                     st.plotly_chart(fig, use_container_width=True, key="my_pop_pyramid")
             except Exception:
@@ -796,7 +798,7 @@ def render():
                         fig.update_layout(height=270)
                         st.plotly_chart(fig, use_container_width=True, key="my_re_sgg")
                     else:
-                        st.info("부동산 데이터 없음")
+                        st.info(f"부동산 데이터 없음 (리치고: 중구·영등포구·서초구 아파트만 제공)")
             except Exception:
                 st.info("부동산 데이터 로드 실패")
 
