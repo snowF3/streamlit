@@ -451,6 +451,9 @@ def render_sidebar_chat():
         [data-testid="stSidebar"] .stMarkdown { overflow-x: auto; }
         [data-testid="stSidebar"] { min-width: 320px; }
         [data-testid="stSidebar"] > div:first-child { padding-top: 0.5rem !important; }
+        [data-testid="stSidebar"] [data-testid="stVerticalBlock"] { padding-left: 0 !important; padding-right: 0 !important; }
+        [data-testid="stSidebar"] .stTextInput > div { width: 100% !important; }
+        [data-testid="stSidebar"] .stButton > button { width: 100% !important; }
         </style>""", unsafe_allow_html=True)
 
         # ── 대화 없을 때 ──
