@@ -542,7 +542,7 @@ def render():
         my_city = my_nb.split(" ")[0] if my_nb else ""
         my_short = my_nb.split(" ")[-1] if my_nb else ""
         my_dc = rm[rm["label"] == my_nb]["district_code"].values[0] if my_nb in rm["label"].values else ""
-        same_city_hp = hp[(hp["city"] == my_city) & (hp["STANDARD_YEAR_MONTH"] == selected_ym)].sort_values("hotplace_score", ascending=False)
+        same_city_hp = hp[(hp["city"] == my_city) & (hp["STANDARD_YEAR_MONTH"] == latest_month)].sort_values("hotplace_score", ascending=False)
         my_row_hp = same_city_hp[same_city_hp["DISTRICT_CODE"] == my_dc]
         others_hp = same_city_hp[same_city_hp["DISTRICT_CODE"] != my_dc].head(3)
         nearby_rows = pd.concat([my_row_hp, others_hp])
@@ -612,8 +612,8 @@ def render():
 
         with tab_summary:
             # 프로파일 점수 — 누적 계산 (100 + 전월들 합산)
-            my_hp_all = hp[(hp["DISTRICT_CODE"] == dc) & (hp["STANDARD_YEAR_MONTH"] <= selected_ym)].sort_values("STANDARD_YEAR_MONTH")
-            my_hp_curr = hp[(hp["DISTRICT_CODE"] == dc) & (hp["STANDARD_YEAR_MONTH"] == selected_ym)]
+            my_hp_all = hp[(hp["DISTRICT_CODE"] == dc) & (hp["STANDARD_YEAR_MONTH"] <= latest_month)].sort_values("STANDARD_YEAR_MONTH")
+            my_hp_curr = hp[(hp["DISTRICT_CODE"] == dc) & (hp["STANDARD_YEAR_MONTH"] == latest_month)]
             my_sig = [_hp_to_signal(row) for _, row in my_hp_curr.iterrows()] if not my_hp_curr.empty else []
 
             if my_sig:
@@ -625,9 +625,9 @@ def render():
                 score_prefix = "+" if month_chg > 0 else ""
 
                 # 순위 계산
-                month_all = hp[hp["STANDARD_YEAR_MONTH"] == selected_ym].copy()
+                month_all = hp[hp["STANDARD_YEAR_MONTH"] == latest_month].copy()
                 month_all["cum"] = month_all["DISTRICT_CODE"].apply(
-                    lambda d: 100 + hp[(hp["DISTRICT_CODE"] == d) & (hp["STANDARD_YEAR_MONTH"] <= selected_ym)]["hotplace_score"].sum()
+                    lambda d: 100 + hp[(hp["DISTRICT_CODE"] == d) & (hp["STANDARD_YEAR_MONTH"] <= latest_month)]["hotplace_score"].sum()
                 )
                 rank = int((month_all["cum"] > cumulative_score).sum() + 1)
                 total_districts = len(month_all)
@@ -654,7 +654,7 @@ def render():
                     trend = all_hp_dc.copy()
                     trend["cum_score"] = 100 + trend["hotplace_score"].cumsum()
                     trend["label"] = trend["STANDARD_YEAR_MONTH"].astype(str).apply(lambda x: f"{x[2:4]}.{x[4:6]}")
-                    curr_label = f"{str(selected_ym)[2:4]}.{str(selected_ym)[4:6]}"
+                    curr_label = f"{str(latest_month)[2:4]}.{str(latest_month)[4:6]}"
 
                     fig_trend = go.Figure(go.Scatter(
                         x=trend["label"], y=trend["cum_score"],
