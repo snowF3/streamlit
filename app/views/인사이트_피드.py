@@ -160,13 +160,8 @@ def _render_forecast_cards(pop_agg, card_agg, region_master, show_title=True):
 
                     ai_forecast = _cortex(prompt)
 
-                st.markdown(f"""<div style="background:linear-gradient(135deg,rgba(139,92,246,0.06),rgba(59,130,246,0.06));
-                    border:1px solid rgba(139,92,246,0.15);border-radius:12px;padding:16px 20px;margin-top:8px;">
-                    <div style="font-size:13px;font-weight:600;color:#7C3AED;margin-bottom:10px;">
-                        📊 {top_name} — 3개월 예측 결과
-                    </div>
-                </div>""", unsafe_allow_html=True)
-                st.markdown(ai_forecast)
+                with st.expander(f"{top_name} — 3개월 예측 결과", expanded=True):
+                    st.markdown(ai_forecast)
             except Exception as e:
                 st.error(f"AI 예측 오류: {e}")
         else:
