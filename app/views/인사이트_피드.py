@@ -637,15 +637,17 @@ def render():
                 rank = int((month_all["cum"] > cumulative_score).sum() + 1)
                 total_districts = len(month_all)
 
+                chg_arrow = "▲" if month_chg > 0 else "▼" if month_chg < 0 else "―"
                 st.markdown(
                     f'<div style="padding:4px 0;">'
                     f'  <div style="display:flex; justify-content:space-between; align-items:center;">'
-                    f'    <span style="font-size:11px; opacity:0.5;">핫플 점수 (방문인구·매출·유동인구·매매가·신규설치 종합)</span>'
+                    f'    <span style="font-size:11px; opacity:0.5;">핫플 점수</span>'
                     f'    <span style="font-size:11px; opacity:0.5;">{total_districts}개 동네 중 {rank}위</span>'
                     f'  </div>'
                     f'  <div style="font-size:22px; font-weight:800;">{cumulative_score}점</div>'
                     f'  <div style="font-size:11px; color:{score_color};">'
-                    f'    전월대비 {score_prefix}{month_chg}점 ({prev_score}점 → {cumulative_score}점)</div>'
+                    f'    {chg_arrow} 전월대비 {score_prefix}{month_chg}점</div>'
+                    f'  <div style="font-size:10px; opacity:0.35;">{prev_score}점 → {cumulative_score}점</div>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
