@@ -711,35 +711,89 @@ def render():
             st.stop()
 
         st.markdown(
-            "**MiroFish Lite v2** — 클러스터별 AI 분석가가 118개 동네의 미래 상권 변화를 예측합니다."
+            "**MiroFish Lite v2** — 클러스터별 AI 분석가가 동네의 미래 상권 변화를 예측합니다."
         )
 
-        ai_n_rounds = st.selectbox("예측 기간 (개월)", [2, 3, 4, 5], index=1, key="ai_rounds")
+        # ── 설정: 범위 + 기간 ──
+        _ai_c1, _ai_c2 = st.columns([2, 1])
+        with _ai_c2:
+            ai_n_rounds = st.selectbox("예측 기간 (개월)", [2, 3, 4, 5], index=1, key="ai_rounds")
+        with _ai_c1:
+            ai_scope = st.radio("범위", ["전체 동네", "구 선택", "동 선택"], horizontal=True, key="ai_scope")
+
+        # ── 동네 선택 ──
+        _ai_target_dcs = None  # None이면 전체
+
+        # region_master에서 구/동 매핑 구성
+        _rm = region_master[region_master["district_code"].isin(data_districts)].copy()
+        _cities = sorted(_rm["city_kor"].unique())
+
+        if ai_scope == "구 선택":
+            _sel_cities = st.multiselect("구 선택", options=_cities, key="ai_city")
+            if _sel_cities:
+                _ai_target_dcs = _rm[_rm["city_kor"].isin(_sel_cities)]["district_code"].tolist()
+
+        elif ai_scope == "동 선택":
+            _sel_city_for_dong = st.selectbox("구 먼저 선택", options=_cities, key="ai_city_for_dong")
+            if _sel_city_for_dong:
+                _dongs_in_city = _rm[_rm["city_kor"] == _sel_city_for_dong].sort_values("district_kor")
+                _dong_options = _dongs_in_city["district_code"].tolist()
+                _dong_labels = {row["district_code"]: row["district_kor"] for _, row in _dongs_in_city.iterrows()}
+                _sel_dongs = st.multiselect(
+                    f"{_sel_city_for_dong} 동 선택",
+                    options=_dong_options,
+                    format_func=lambda dc: _dong_labels.get(dc, dc),
+                    key="ai_dong",
+                )
+                if _sel_dongs:
+                    _ai_target_dcs = _sel_dongs
+
+        # 선택 결과 표시
+        if _ai_target_dcs:
+            st.caption(f"선택된 동네: {len(_ai_target_dcs)}개")
+        elif ai_scope != "전체 동네":
+            st.caption("동네를 선택하세요.")
 
         if st.button("AI 예측 실행", type="primary", use_container_width=True, key="ai_run"):
+            # 선택 동네 모드인데 선택 안 했으면 경고
+            if ai_scope != "전체 동네" and not _ai_target_dcs:
+                st.warning("동네를 선택하세요.")
+                st.stop()
+
             with st.spinner("데이터 준비 중..."):
                 try:
-                    _profiles = generate_all_profiles(
+                    _all_profiles = generate_all_profiles(
                         derived_metrics=derived, card_agg_df=card_agg,
                         pop_time_df=pop_time, income_agg_df=income_agg,
                         centroids_df=centroids, snapshot_month=int(selected_month),
                     )
 
+                    # 선택된 동네만 필터링
+                    if _ai_target_dcs:
+                        _target_set = set(_ai_target_dcs)
+                        _profiles = [p for p in _all_profiles if p["district_code"] in _target_set]
+                    else:
+                        _profiles = _all_profiles
+
+                    # 대상 동네 기준으로 클러스터 데이터 구성
+                    _target_codes = {p["district_code"] for p in _profiles}
                     _sim_map = {}
                     if not feature_matrix.empty:
                         for _dc in feature_matrix.index:
-                            _sim_df = find_similar_districts(feature_matrix, _dc, top_n=5)
-                            _sim_map[_dc] = list(zip(
-                                _sim_df["district_code"].tolist(),
-                                [round(float(s), 3) for s in _sim_df["similarity"].tolist()],
-                            ))
+                            if _dc in _target_codes:
+                                _sim_df = find_similar_districts(feature_matrix, _dc, top_n=5)
+                                _sim_map[_dc] = list(zip(
+                                    _sim_df["district_code"].tolist(),
+                                    [round(float(s), 3) for s in _sim_df["similarity"].tolist()],
+                                ))
                     _dc_cluster = {}
                     if not cluster_labels.empty:
                         for _dc, _cid in cluster_labels.items():
-                            _dc_cluster[_dc] = {
-                                "cluster_id": int(_cid),
-                                "cluster_label": cluster_type_map.get(int(_cid), f"유형 {_cid}"),
-                            }
+                            if _dc in _target_codes:
+                                _dc_cluster[_dc] = {
+                                    "cluster_id": int(_cid),
+                                    "cluster_label": cluster_type_map.get(int(_cid), f"유형 {_cid}"),
+                                }
                     _cluster_data = {
                         "similar_map": _sim_map,
                         "district_cluster": _dc_cluster,
