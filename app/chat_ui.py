@@ -478,11 +478,15 @@ def render_sidebar_chat():
 
     with st.sidebar:
 
-        # 사이드바 표 가로 스크롤 CSS
+        # 사이드바 CSS
         st.markdown("""<style>
+        /* 표 가로 스크롤 */
         [data-testid="stSidebar"] table { font-size: 11px !important; }
         [data-testid="stSidebar"] .stMarkdown { overflow-x: auto; }
         [data-testid="stSidebar"] { min-width: 320px; }
+        /* 상단 패딩 제거 */
+        [data-testid="stSidebar"] > div:first-child { padding-top: 0.5rem !important; }
+        [data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap: 0.3rem !important; }
         </style>""", unsafe_allow_html=True)
 
         # ── 대화 없을 때 ──
@@ -566,7 +570,19 @@ def render_sidebar_chat():
 
             st.markdown("---")
 
-        # ── 입력 ──
+        # ── 입력 (하단 고정 시도) ──
+        st.markdown("""<style>
+        /* 입력 영역 하단 고정 */
+        [data-testid="stSidebar"] > div:first-child > div > div:last-child {
+            position: sticky;
+            bottom: 0;
+            background: var(--background-color, #0E1117);
+            padding: 8px 0;
+            z-index: 10;
+        }
+        </style>""", unsafe_allow_html=True)
+
+        st.markdown("---")
         placeholder = random.choice(_PLACEHOLDERS)
         inp = st.text_input("", key="ai_inp", placeholder=placeholder)
         c1, c2 = st.columns([4, 1])
