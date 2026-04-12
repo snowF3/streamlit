@@ -27,9 +27,9 @@ h2, h3 { font-size: 15px !important; }
 from chat_ui import render_sidebar_chat
 render_sidebar_chat()
 
-# ── 상단 탭 (3탭) ──
-tab_insight, tab_analysis, tab_future = st.tabs([
-    "📊 인사이트", "🔍 상권 분석", "🔮 미래 예측"
+# ── 상단 탭 (2탭) ──
+tab_insight, tab_future = st.tabs([
+    "📊 인사이트", "🔮 미래 예측"
 ])
 
 with tab_insight:
@@ -38,13 +38,6 @@ with tab_insight:
         render_feed()
     except Exception as e:
         st.error(f"인사이트 로드 오류: {e}")
-
-with tab_analysis:
-    try:
-        from views.동네_프로파일 import render as render_profile
-        render_profile()
-    except Exception as e:
-        st.error(f"상권 분석 로드 오류: {e}")
 
 with tab_future:
     try:
