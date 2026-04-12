@@ -5,7 +5,7 @@ import streamlit as st
 import json, re
 from data_loader import run_query, SPH, RICHGO, AJD
 
-CORTEX_MODEL = "openai-gpt-5-mini"
+CORTEX_MODEL = "openai-gpt-5.4"
 
 
 def _safe_rerun():
@@ -23,19 +23,31 @@ def _cortex(prompt):
 
 
 def _classify(q, h=""):
-    p = f"""Classify this question. Return JSON only.
-Previous: {h[:200]}
-Question: {q}
-{{"intent":"lookup|compare|trend|simulate|recommend|hotplace|marketing|rental|forecast|realestate","district":"district_name|null","category":"business_type|null"}}"""
+    p = f"""아래 질문을 분류하세요. JSON만 반환.
+
+이전 대화: {h[:300]}
+질문: {q}
+
+intent 설명:
+- simulate: 출점, 카페/음식점 차리기, 상권 분석, 매출 시뮬레이션, "~하면 어떨까"
+- lookup: 특정 동네 유동인구/매출/소득 조회
+- compare: 2개 이상 동네 비교 ("A vs B", "A와 B")
+- trend: 추이, 변화, 최근 몇 개월
+- forecast: 미래 예측, 전망, "3개월 후"
+- recommend: 업종 추천, "뭘 팔면", "어떤 업종"
+- hotplace: 핫플, 뜨는 동네, Top 5
+- marketing: 마케팅 채널, ROI, 광고
+- rental: 렌탈 트렌드, 정수기
+- realestate: 부동산, 매매가, 전세
+- screen: 현재 화면 요약, "지금 보이는 거", "이 화면"
+
+{{"intent":"...", "district":"법정동명 또는 null", "category":"업종 또는 null"}}"""
     resp = _cortex(p)
     try:
         m = re.search(r'\{.*\}', resp, re.DOTALL)
         if m: return json.loads(m.group())
     except: pass
     return {"intent": "lookup", "district": None, "category": None}
-
-
-# intent에 marketing, rental, forecast 추가
 
 
 def _qpop(d):
@@ -218,7 +230,7 @@ def _answer(q, hist_list, pctx="", sel_d=""):
             parts.append(f"=== {x} ===\n[유동인구]\n{_qpop(x)}\n[카드매출]\n{_qsales(x)}")
         data = "\n\n".join(parts) if parts else "비교 대상 없음"
     elif intent == "simulate" and d:
-        data = f"[유동인구]\n{_qpop(d)}\n\n[카드매출]\n{_qsales(d)}\n\n[소득]\n{_qincome(d)}"
+        data = f"[{d} 유동인구]\n{_qpop(d)}\n\n[{d} 카드매출 (업종별)]\n{_qsales(d)}\n\n[{d} 소득/자산]\n{_qincome(d)}\n\n[{d} 부동산 시세]\n{_qrealestate(d)}"
     elif intent == "recommend":
         data = (f"[카드매출]\n{_qsales(d)}\n\n[소득]\n{_qincome(d)}\n\n[렌탈 트렌드]\n{_qrental()}") if d else f"[핫플]\n{_qhot(5)}\n\n[렌탈 트렌드]\n{_qrental()}"
     elif intent == "marketing":
@@ -274,10 +286,13 @@ def _answer(q, hist_list, pctx="", sel_d=""):
             data = f"[{d} 12개월 추이]\n{df.to_string(index=False)}"
         except Exception as e:
             data = f"추이 조회 오류: {e}"
+    elif intent == "screen":
+        data = f"[현재 화면 정보]\n{pctx}" if pctx else "현재 화면 정보가 전달되지 않았습니다."
     elif d:
-        data = f"[유동인구]\n{_qpop(d)}\n\n[카드매출]\n{_qsales(d)}\n\n[소득]\n{_qincome(d)}"
+        data = f"[{d} 유동인구]\n{_qpop(d)}\n\n[{d} 카드매출]\n{_qsales(d)}\n\n[{d} 소득]\n{_qincome(d)}"
     else:
-        data = "지역명을 특정할 수 없습니다."
+        # district 없으면 핫플 랭킹이라도 제공
+        data = f"[전체 핫플 랭킹]\n{_qhot(5)}\n\n[현재 화면]\n{pctx}" if pctx else f"[전체 핫플 랭킹]\n{_qhot(5)}"
 
     ctx = f"[현재 화면] {pctx}" if pctx else ""
 
