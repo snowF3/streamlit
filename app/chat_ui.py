@@ -448,7 +448,7 @@ def render_sidebar_chat():
         # CSS
         st.markdown("""<style>
         [data-testid="stSidebar"] { min-width: 320px; }
-        [data-testid="stSidebar"] > div:first-child { padding-top: 0.5rem !important; }
+        [data-testid="stSidebar"] > div:first-child { padding-top: 0 !important; }
         [data-testid="stSidebar"] table { font-size: 11px !important; }
         [data-testid="stSidebar"] .stMarkdown { overflow-x: auto; }
         </style>""", unsafe_allow_html=True)
@@ -491,10 +491,7 @@ def render_sidebar_chat():
 
             for msg in st.session_state.chat_messages:
                 if msg["role"] == "user":
-                    st.markdown(f"""<div style="text-align:right;margin:8px 0 4px;">
-                        <span style="background:#6366F1;color:white;padding:6px 10px;
-                        border-radius:10px 10px 3px 10px;font-size:12px;display:inline-block;max-width:90%;">
-                        {msg['content']}</span></div>""", unsafe_allow_html=True)
+                    st.info(msg['content'])
                 else:
                     st.markdown(msg['content'])
 
