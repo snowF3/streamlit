@@ -89,6 +89,9 @@ def render():
     except Exception:
         pass
 
+    with st.expander("ℹ️ 점수 산정 방식"):
+        st.markdown("최근 3개월 vs 이전 3개월의 **방문인구 변화율(60%)** + **카드매출 변화율(40%)**을 종합한 점수입니다. 인사이트 탭의 핫플 점수와 동일한 기준입니다.")
+
     st.markdown("---")
 
     # 클러스터링 (캐싱)
@@ -286,6 +289,7 @@ def render():
                 hhi_val = dm['consumption_hhi']
                 hhi_label = "다양" if hhi_val < 0.05 else ("보통" if hhi_val < 0.15 else "편중")
                 st.metric("소비집중도(HHI)", f"{hhi_val:.3f} ({hhi_label})")
+                st.caption("HHI(허핀달-허쉬만 지수): 업종별 매출 집중도. 0에 가까울수록 다양한 소비, 1에 가까울수록 특정 업종 편중")
 
             # 클러스터 태그 표시
             if top_code in cluster_labels.index:
@@ -453,6 +457,7 @@ def render():
 
         with ins3:
             st.markdown("**🎯 소비특화 (HHI Top 5)**")
+            st.caption("HHI 높음 = 특정 업종에 매출 집중 (전문 상권)")
             if "consumption_hhi" in derived.columns:
                 top5_hhi = derived.nlargest(5, "consumption_hhi")[["consumption_hhi"]].copy()
                 top5_hhi.index = [name_map.get(dc, dc) for dc in top5_hhi.index]
@@ -461,7 +466,7 @@ def render():
 
     # ── 탭2: What-if 시뮬레이션 (Phase 2 고도화) ──
     with tab_sim:
-        st.markdown("**동네에 가게를 열면?** 유동인구 · 소득 · 경쟁 데이터 기반 예상 매출을 시뮬레이션합니다.")
+        st.markdown("**🧪 출점 시뮬레이션** — 동네를 선택하고, 업종과 조건을 설정하면 유동인구·소득·경쟁 데이터를 기반으로 예상 월매출을 계산합니다.")
 
         # 시뮬레이션 히스토리 초기화
         if "sim_history" not in st.session_state:
@@ -579,6 +584,7 @@ def render():
             st.caption("⚠️ 통계 기반 추정치이며, 실제 매출과 차이가 있을 수 있습니다.")
 
             # ── 시뮬레이션 히스토리 비교 ──
+            st.info("💡 다른 동네나 업종으로 시뮬레이션을 여러 번 실행하면 자동으로 비교 테이블이 생성됩니다.")
             if len(st.session_state.sim_history) >= 2:
                 st.markdown("---")
                 st.markdown("##### 📊 시뮬레이션 비교")
@@ -649,10 +655,10 @@ def render():
                     values=job_dist.values.tolist(),
                     hole=0.4,
                     textinfo="label+percent",
-                    textposition="outside",
+                    textposition="inside",
                 ))
                 fig_job.update_layout(
-                    title="직업군 분포", height=300,
+                    title="직업군 분포", height=250,
                     margin=dict(l=20, r=20, t=40, b=10),
                     showlegend=False,
                 )

@@ -112,12 +112,16 @@ def _render_forecast_cards(pop_agg, card_agg, region_master):
                 <div style="font-size:10px;color:#888;">방문 {row['growth']:.1f}% · 매출 {row['sales_growth']:.1f}%</div>
             </div>""", unsafe_allow_html=True)
 
-    # ── Cortex AI 심층 예측 (상위 1위 동네) ──
+    # ── Cortex AI 심층 예측 (동네 선택) ──
     st.markdown("---")
     st.markdown("### 🧠 AI 심층 예측")
     if not rising.empty:
-        top_dc = rising.index[0]
-        top_name = rising.iloc[0]["name"]
+        _ai_options = {row["name"]: dc for dc, row in rising.iterrows()}
+        _ai_selected = st.selectbox(
+            "분석할 동네 선택", list(_ai_options.keys()), index=0, key="ai_deep_district"
+        )
+        top_dc = _ai_options[_ai_selected]
+        top_name = _ai_selected
 
         try:
             from chat_ui import _cortex

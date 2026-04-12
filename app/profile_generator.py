@@ -315,7 +315,7 @@ def generate_profile_text(profile: dict) -> str:
 
     if fin["avg_income"] > 0:
         lines.append(
-            f"평균 소득은 {fin['avg_income']:,}원이며, {gap_desc}."
+            f"평균 소득은 {fin['avg_income'] / 10000:,.0f}만원이며, {gap_desc}."
         )
 
     if tags_str:
@@ -504,7 +504,7 @@ def generate_persona_text(persona: dict, district_name: str = "") -> str:
 
     lines = [
         f"{loc}{persona['age_group']} {gender_kor}, 직업: {persona['job_type']}.",
-        f"소득 구간: {persona['income_bracket']}, 평균 소득 약 {persona['avg_income']:,}원.",
+        f"소득 구간: {persona['income_bracket']}, 평균 소득 약 {persona['avg_income'] / 10000:,.0f}만원.",
         f"이 유형은 약 {persona['weight']:,}명을 대표한다.",
     ]
     return " ".join(lines)
