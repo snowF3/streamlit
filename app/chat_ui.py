@@ -447,13 +447,10 @@ def render_sidebar_chat():
     with st.sidebar:
         # CSS
         st.markdown("""<style>
-        [data-testid="stSidebar"] table { font-size: 11px !important; }
-        [data-testid="stSidebar"] .stMarkdown { overflow-x: auto; }
         [data-testid="stSidebar"] { min-width: 320px; }
         [data-testid="stSidebar"] > div:first-child { padding-top: 0.5rem !important; }
-        [data-testid="stSidebar"] [data-testid="stVerticalBlock"] { padding-left: 0 !important; padding-right: 0 !important; }
-        [data-testid="stSidebar"] .stTextInput > div { width: 100% !important; }
-        [data-testid="stSidebar"] .stButton > button { width: 100% !important; }
+        [data-testid="stSidebar"] table { font-size: 11px !important; }
+        [data-testid="stSidebar"] .stMarkdown { overflow-x: auto; }
         </style>""", unsafe_allow_html=True)
 
         # ── 대화 없을 때 ──
@@ -521,7 +518,7 @@ def render_sidebar_chat():
                 followups = _get_followup(last_msg.get("intent", ""), last_msg.get("district", ""))
                 if followups:
                     st.markdown("---")
-                    st.markdown('<div style="font-size:10px;color:#777;margin-bottom:4px;">관련 분석</div>', unsafe_allow_html=True)
+                    st.caption("관련 분석")
                     for i, (fq, fl) in enumerate(followups[:2]):
                         if st.button(fl, key=f"fw_{i}", use_container_width=True):
                             st.session_state.pending_q = fq
