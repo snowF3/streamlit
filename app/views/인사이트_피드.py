@@ -13,6 +13,7 @@ from data_loader import (
     load_region_master, load_population_agg, load_card_sales_agg,
     load_card_sales_time, load_population_time, load_population_demo,
     load_income_agg, load_realestate, load_hotplace_monthly,
+    run_query, AJD, SPH,
 )
 from charts import (
     spending_radar_chart, realestate_trend_chart,
@@ -27,6 +28,151 @@ def _container(**kwargs):
         return st.container(**kwargs)
     except TypeError:
         return st.container()
+
+def _render_forecast_cards(pop_agg, card_agg, region_master):
+    """🔮 3개월 전망 예측 카드"""
+    import numpy as np
+
+    st.markdown("### 🔮 3개월 전망")
+
+    months = sorted(pop_agg["STANDARD_YEAR_MONTH"].unique())
+    if len(months) < 3:
+        st.caption("데이터 부족 (3개월 이상 필요)")
+        return
+
+    # 최근 3개월 vs 이전 3개월 방문인구 변화율로 성장/하락 예측
+    recent_3 = months[-3:]
+    prev_3 = months[-6:-3] if len(months) >= 6 else months[:3]
+
+    pop_recent = pop_agg[pop_agg["STANDARD_YEAR_MONTH"].isin(recent_3)].groupby("DISTRICT_CODE").agg({
+        "VISITING_POPULATION": "mean", "RESIDENTIAL_POPULATION": "mean",
+        "WORKING_POPULATION": "mean"
+    }).rename(columns={"VISITING_POPULATION": "visit_r", "RESIDENTIAL_POPULATION": "res_r", "WORKING_POPULATION": "work_r"})
+
+    pop_prev = pop_agg[pop_agg["STANDARD_YEAR_MONTH"].isin(prev_3)].groupby("DISTRICT_CODE").agg({
+        "VISITING_POPULATION": "mean"
+    }).rename(columns={"VISITING_POPULATION": "visit_p"})
+
+    merged = pop_recent.join(pop_prev, how="inner")
+    merged["growth"] = ((merged["visit_r"] - merged["visit_p"]) / merged["visit_p"].replace(0, np.nan) * 100).fillna(0)
+
+    # 카드매출 변화율
+    card_recent = card_agg[card_agg["STANDARD_YEAR_MONTH"].isin(recent_3)]
+    card_prev = card_agg[card_agg["STANDARD_YEAR_MONTH"].isin(prev_3)]
+    if "TOTAL_SALES" in card_recent.columns:
+        cr = card_recent.groupby("DISTRICT_CODE")["TOTAL_SALES"].mean()
+        cp = card_prev.groupby("DISTRICT_CODE")["TOTAL_SALES"].mean()
+        merged["sales_growth"] = ((cr - cp) / cp.replace(0, np.nan) * 100).fillna(0)
+    else:
+        merged["sales_growth"] = 0
+
+    # 종합 점수
+    merged["forecast_score"] = merged["growth"] * 0.6 + merged["sales_growth"] * 0.4
+
+    # 이름 매핑
+    name_map = region_master.set_index("district_code").apply(
+        lambda r: f"{r['city_kor']} {r['district_kor']}", axis=1
+    ).to_dict()
+    merged["name"] = merged.index.map(name_map)
+
+    # 상승 / 주의 / 하락 분류
+    rising = merged[merged["forecast_score"] > 3].nlargest(5, "forecast_score")
+    falling = merged[merged["forecast_score"] < -3].nsmallest(5, "forecast_score")
+    neutral = merged[(merged["forecast_score"] >= -3) & (merged["forecast_score"] <= 3)].head(3)
+
+    c1, c2, c3 = st.columns(3)
+
+    with c1:
+        st.markdown("**🔥 상승 예측**")
+        for _, row in rising.iterrows():
+            st.markdown(f"""<div style="background:rgba(239,68,68,0.1);padding:8px 12px;border-radius:8px;
+                margin:4px 0;border-left:3px solid #EF4444;">
+                <div style="font-size:13px;font-weight:600;">{row['name']}</div>
+                <div style="font-size:11px;color:#EF4444;">+{row['forecast_score']:.1f}점 ↑</div>
+                <div style="font-size:10px;color:#888;">방문 +{row['growth']:.1f}% · 매출 +{row['sales_growth']:.1f}%</div>
+            </div>""", unsafe_allow_html=True)
+
+    with c2:
+        st.markdown("**⚡ 관찰 필요**")
+        for _, row in neutral.iterrows():
+            st.markdown(f"""<div style="background:rgba(245,158,11,0.1);padding:8px 12px;border-radius:8px;
+                margin:4px 0;border-left:3px solid #F59E0B;">
+                <div style="font-size:13px;font-weight:600;">{row['name']}</div>
+                <div style="font-size:11px;color:#F59E0B;">{row['forecast_score']:+.1f}점</div>
+                <div style="font-size:10px;color:#888;">방문 {row['growth']:+.1f}% · 매출 {row['sales_growth']:+.1f}%</div>
+            </div>""", unsafe_allow_html=True)
+
+    with c3:
+        st.markdown("**📉 하락 예측**")
+        for _, row in falling.iterrows():
+            st.markdown(f"""<div style="background:rgba(59,130,246,0.1);padding:8px 12px;border-radius:8px;
+                margin:4px 0;border-left:3px solid #3B82F6;">
+                <div style="font-size:13px;font-weight:600;">{row['name']}</div>
+                <div style="font-size:11px;color:#3B82F6;">{row['forecast_score']:.1f}점 ↓</div>
+                <div style="font-size:10px;color:#888;">방문 {row['growth']:.1f}% · 매출 {row['sales_growth']:.1f}%</div>
+            </div>""", unsafe_allow_html=True)
+
+    # ── Cortex AI 심층 예측 (동네 선택) ──
+    st.markdown("---")
+    st.markdown("### 🧠 AI 심층 예측")
+    if not rising.empty:
+        _ai_options = {row["name"]: dc for dc, row in rising.iterrows()}
+        _ai_selected = st.selectbox(
+            "분석할 동네 선택", list(_ai_options.keys()), index=0, key="ai_deep_district"
+        )
+        top_dc = _ai_options[_ai_selected]
+        top_name = _ai_selected
+
+        try:
+            from chat_ui import _cortex
+            ts_df = pop_agg[pop_agg["DISTRICT_CODE"] == top_dc].groupby("STANDARD_YEAR_MONTH").agg({
+                "RESIDENTIAL_POPULATION": "sum", "WORKING_POPULATION": "sum", "VISITING_POPULATION": "sum"
+            }).reset_index()
+            ts_df["TOTAL"] = ts_df["RESIDENTIAL_POPULATION"] + ts_df["WORKING_POPULATION"] + ts_df["VISITING_POPULATION"]
+            ts_df = ts_df.sort_values("STANDARD_YEAR_MONTH")
+            ts_str = ts_df[["STANDARD_YEAR_MONTH", "TOTAL"]].to_string(index=False)
+
+            with st.expander(f"🔮 {top_name} — Cortex AI 3개월 예측 (클릭하여 보기)"):
+                with st.spinner("Cortex 분석 중..."):
+                    prompt = f"""{top_name}의 월별 총 유동인구 데이터입니다.
+
+{ts_str}
+
+위 데이터를 분석하여:
+1. 트렌드 (상승/하락/정체)
+2. 계절성 패턴
+3. 향후 3개월 예측값 (표로)
+4. 예측 근거
+5. 리스크 요인
+
+간결하게 표와 핵심만 답변하세요. 한국어로."""
+
+                    ai_forecast = _cortex(prompt)
+                    st.markdown(ai_forecast)
+        except Exception as e:
+            st.caption(f"AI 예측 오류: {e}")
+    else:
+        st.caption("상승 예측 동네가 없어 AI 심층 예측을 건너뜁니다.")
+
+    # 렌탈 수요 예측
+    st.markdown("---")
+    st.markdown("### 📦 렌탈 수요 시그널")
+    try:
+        rental = run_query(f"""
+            SELECT RENTAL_SUB_CATEGORY as ITEM,
+                   SUM(CONTRACT_COUNT) as CONTRACTS
+            FROM {AJD}.V06_RENTAL_CATEGORY_TRENDS
+            WHERE YEAR_MONTH = (SELECT MAX(YEAR_MONTH) FROM {AJD}.V06_RENTAL_CATEGORY_TRENDS)
+            GROUP BY 1 ORDER BY CONTRACTS DESC LIMIT 5
+        """)
+        if not rental.empty:
+            cols = st.columns(len(rental))
+            for i, (_, row) in enumerate(rental.iterrows()):
+                with cols[i]:
+                    st.metric(row["ITEM"], f"{int(row['CONTRACTS']):,}건")
+    except Exception:
+        st.caption("렌탈 데이터 로드 오류")
+
 
 def render():
     # ── CSS ──
@@ -55,6 +201,8 @@ def render():
     pop_agg = load_population_agg()
     card_agg = load_card_sales_agg()
     hp = load_hotplace_monthly()
+
+    # 예측 카드는 미래 예측 탭으로 이동됨
 
     data_districts = set(hp["DISTRICT_CODE"].unique())
     rm = region_master[region_master["district_code"].isin(data_districts)].copy()
@@ -359,8 +507,9 @@ def render():
 
         st.divider()
 
-        # 연관 동네 (클릭 가능)
-        st.markdown('<div style="font-size:13px; font-weight:800; margin-bottom:4px;">연관 동네</div>', unsafe_allow_html=True)
+        # 연관 동네 (같은 구 내 동네)
+        st.markdown('<div style="font-size:13px; font-weight:800; margin-bottom:2px;">연관 동네</div>', unsafe_allow_html=True)
+        st.caption("같은 구(區) 내 다른 동네의 상권 변화")
         same_city = [s for s in signals if s["city"] == sig["city"] and s["dc"] != sig["dc"]]
         if same_city:
             for ri, rel in enumerate(same_city[:5]):
@@ -425,13 +574,14 @@ def render():
         district = sel_row["district_kor"]
 
         all_months = sorted(pop_agg["STANDARD_YEAR_MONTH"].unique(), reverse=True)
-        # 선택된 년월 기준
-        latest_month = selected_ym if selected_ym in all_months else (all_months[0] if all_months else None)
+        # 내 동네 독립 기준월
+        my_ym_labels = [f"{str(m)[:4]}년 {int(str(m)[4:6])}월" for m in all_months]
+        my_ym_label = st.selectbox("기준 년월", my_ym_labels, index=0, label_visibility="collapsed", key="my_nb_month")
+        latest_month = all_months[my_ym_labels.index(my_ym_label)]
         ym_idx = all_months.index(latest_month) if latest_month in all_months else 0
         prev_month = all_months[ym_idx + 1] if ym_idx + 1 < len(all_months) else None
-        ml_str = f"{str(latest_month)[:4]}년 {int(str(latest_month)[4:6])}월" if latest_month else ""
-        st.caption(f"{city} {district} · {ml_str}")
-        st.caption("↑ 사이드바에서 '동네 프로파일'로 이동")
+        st.caption(f"{city} {district} · {my_ym_label}")
+        st.caption("↑ 사이드바에서 '상권 분석'으로 이동")
 
         if not latest_month:
             st.stop()
@@ -448,8 +598,8 @@ def render():
             income_d = pd.DataFrame()
 
         # ── 탭 ──
-        tab_summary, tab_spend, tab_people, tab_estate, tab_finance = st.tabs(
-            ["요약", "소비", "인구", "부동산", "금융"]
+        tab_summary, tab_spend, tab_people, tab_estate, tab_finance, tab_rental = st.tabs(
+            ["요약", "소비", "인구", "부동산", "금융", "렌탈·인터넷"]
         )
 
         with tab_summary:
@@ -477,7 +627,7 @@ def render():
                 st.markdown(
                     f'<div style="padding:4px 0;">'
                     f'  <div style="display:flex; justify-content:space-between; align-items:center;">'
-                    f'    <span style="font-size:11px; opacity:0.5;">핫플 점수</span>'
+                    f'    <span style="font-size:11px; opacity:0.5;">핫플 점수 (방문인구·매출·유동인구·매매가·신규설치 종합)</span>'
                     f'    <span style="font-size:11px; opacity:0.5;">{total_districts}개 동네 중 {rank}위</span>'
                     f'  </div>'
                     f'  <div style="font-size:22px; font-weight:800;">{cumulative_score}점</div>'
@@ -500,6 +650,7 @@ def render():
                         x=trend["label"], y=trend["cum_score"],
                         mode="lines", line=dict(color="#6366F1", width=2),
                         fill="tozeroy", fillcolor="rgba(99,102,241,0.08)",
+                        name="핫플 점수 추이",
                     ))
                     # 현재 월 포인트
                     curr_row = trend[trend["label"] == curr_label]
@@ -507,6 +658,7 @@ def render():
                         fig_trend.add_trace(go.Scatter(
                             x=[curr_label], y=[curr_row["cum_score"].values[0]],
                             mode="markers", marker=dict(size=10, color="#f04452"),
+                            name="현재 월",
                             showlegend=False,
                         ))
                         fig_trend.add_vline(x=curr_label, line_dash="dot", line_color="rgba(240,68,82,0.3)")
@@ -581,7 +733,7 @@ def render():
                 if not income_d.empty and "AVERAGE_INCOME" in income_d.columns:
                     avg = income_d["AVERAGE_INCOME"].values[0]
                     if pd.notna(avg) and avg > 0:
-                        st.metric("평균소득", f"{avg/1e4:,.0f}만")
+                        st.metric("평균소득", f"{avg/1e4:,.0f}만원")
             with m_cols[2]:
                 if not income_d.empty and "total_customers" in income_d.columns:
                     cust = income_d["total_customers"].values[0]
@@ -607,7 +759,9 @@ def render():
                         fig_ct.add_trace(go.Bar(x=labels, y=ct_agg["FOOD_SALES"], name="식음료", marker_color="#EF553B"))
                     if "COFFEE_SALES" in ct_agg.columns:
                         fig_ct.add_trace(go.Bar(x=labels, y=ct_agg["COFFEE_SALES"], name="커피", marker_color="#00CC96"))
-                    fig_ct.update_layout(title="시간대별 매출", barmode="group", height=230, margin=dict(l=25, r=10, t=30, b=25))
+                    fig_ct.update_layout(title="시간대별 카드매출 (전체/식음료/커피)", barmode="group", height=230,
+                                        margin=dict(l=25, r=10, t=30, b=25),
+                                        yaxis_title="매출(원)", xaxis_title="시간대")
                     st.plotly_chart(fig_ct, use_container_width=True, key="my_sales_time")
             except Exception:
                 pass
@@ -626,7 +780,8 @@ def render():
                 pop_demo = load_population_demo()
                 pd_d = pop_demo[(pop_demo["DISTRICT_CODE"] == dc) & (pop_demo["STANDARD_YEAR_MONTH"] == latest_month)]
                 if not pd_d.empty:
-                    fig = population_pyramid(pd_d, f"{district} 인구 피라미드")
+                    pop_type = st.radio("인구 유형", ["전체", "거주", "직장", "방문"], horizontal=True, key="pyramid_type")
+                    fig = population_pyramid(pd_d, f"{district} 인구 피라미드 ({pop_type})", pop_type=pop_type)
                     fig.update_layout(height=270)
                     st.plotly_chart(fig, use_container_width=True, key="my_pop_pyramid")
             except Exception:
@@ -647,7 +802,7 @@ def render():
                         fig.update_layout(height=270)
                         st.plotly_chart(fig, use_container_width=True, key="my_re_sgg")
                     else:
-                        st.info("부동산 데이터 없음")
+                        st.info(f"부동산 데이터 없음 (리치고: 중구·영등포구·서초구 아파트만 제공)")
             except Exception:
                 st.info("부동산 데이터 로드 실패")
 
@@ -661,4 +816,64 @@ def render():
                 st.plotly_chart(fig, use_container_width=True, key="my_job")
             else:
                 st.info("소득 데이터 없음")
+
+        with tab_rental:
+            # 영유아/여성 비율
+            try:
+                from data_loader import load_richgo_fertility, load_ajd_new_install, AJD
+                fertility = load_richgo_fertility()
+                ft = fertility[fertility["SGG"] == city]
+                if not ft.empty and "AGE_UNDER5_PER_FEMALE_20TO40" in ft.columns:
+                    avg_ratio = ft["AGE_UNDER5_PER_FEMALE_20TO40"].mean()
+                    st.metric("영유아/가임여성 비율", f"{avg_ratio:.3f}")
+                    if avg_ratio > 0.15:
+                        st.caption("💡 영유아 비율 높음 → 정수기/공기청정기 렌탈 수요 높을 가능성")
+                    elif avg_ratio < 0.08:
+                        st.caption("💡 영유아 비율 낮음 → 1인/2인 가구 중심")
+                else:
+                    st.caption("영유아 데이터: 중구·영등포구·서초구만 제공")
+            except Exception:
+                pass
+
+            # 렌탈 트렌드
+            try:
+                rental = run_query(f"""
+                    SELECT RENTAL_SUB_CATEGORY as ITEM,
+                           SUM(CONTRACT_COUNT) as CONTRACTS
+                    FROM {AJD}.V06_RENTAL_CATEGORY_TRENDS
+                    WHERE INSTALL_STATE LIKE '%서울%'
+                      AND YEAR_MONTH = (SELECT MAX(YEAR_MONTH) FROM {AJD}.V06_RENTAL_CATEGORY_TRENDS)
+                    GROUP BY 1 ORDER BY CONTRACTS DESC LIMIT 5
+                """)
+                if not rental.empty:
+                    st.markdown("**서울 인기 렌탈 Top 5**")
+                    for _, row in rental.iterrows():
+                        st.markdown(f"- {row['ITEM']}: {int(row['CONTRACTS']):,}건")
+                else:
+                    st.caption("렌탈 데이터 없음")
+            except Exception:
+                st.caption("렌탈 데이터 로드 오류")
+
+            # 인터넷 신규설치 추이
+            try:
+                install = run_query(f"""
+                    SELECT YEAR_MONTH, SUM(OPEN_COUNT) as INSTALLS
+                    FROM {AJD}.V05_REGIONAL_NEW_INSTALL
+                    WHERE INSTALL_STATE LIKE '%서울%' AND INSTALL_CITY LIKE '%{city}%'
+                    GROUP BY 1 ORDER BY 1 DESC LIMIT 6
+                """)
+                if not install.empty:
+                    install_sorted = install.sort_values("YEAR_MONTH")
+                    fig_inst = go.Figure(go.Scatter(
+                        x=install_sorted["YEAR_MONTH"].astype(str),
+                        y=install_sorted["INSTALLS"],
+                        mode='lines+markers', line=dict(color='#6366F1', width=2),
+                        fill='tozeroy', fillcolor='rgba(99,102,241,0.1)',
+                        name='신규설치'
+                    ))
+                    fig_inst.update_layout(title=f"{city} 인터넷 신규설치 추이", height=220,
+                                           yaxis_title="건수")
+                    st.plotly_chart(fig_inst, use_container_width=True, key="my_install")
+            except Exception:
+                st.caption("인터넷 설치 데이터 오류")
 

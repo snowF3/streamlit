@@ -1,5 +1,6 @@
 """
-동네 엑스레이 — 인사이트 피드 + AI 에이전트 + 디지털 트윈
+XR-AI(엑스레이) — AI 기반 상권 분석 & 출점 의사결정 플랫폼
+타겟: 소상공인 · 프랜차이즈 출점 · 팝업 위치 기획
 """
 import streamlit as st
 import sys
@@ -8,8 +9,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 st.set_page_config(
-    page_title="동네 엑스레이",
-    page_icon="🏙️",
+    page_title="XR-AI | 상권 분석 플랫폼",
+    page_icon="🔬",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -20,45 +21,27 @@ html, body, [data-testid="stAppViewContainer"] { font-size: 14px !important; }
 [data-testid="stMetricValue"] { font-size: 20px !important; }
 [data-testid="stMetricLabel"] { font-size: 11px !important; }
 h2, h3 { font-size: 15px !important; }
-/* 탭 스타일 */
-[data-testid="stTab"] button { font-size: 14px !important; font-weight: 600 !important; }
 </style>""", unsafe_allow_html=True)
 
 # ── 사이드바: AI 에이전트 ──
 from chat_ui import render_sidebar_chat
 render_sidebar_chat()
 
-# ── 상단 탭 (3개) ──
-tab_feed, tab_agent, tab_twin = st.tabs([
-    "인사이트 피드", "AI 에이전트", "디지털 트윈"
+# ── 상단 탭 (2탭) ──
+tab_insight, tab_future = st.tabs([
+    "📊 인사이트", "🔮 미래 예측"
 ])
 
-with tab_feed:
+with tab_insight:
     try:
-        from views.인사이트_피드 import render
-        render()
+        from views.인사이트_피드 import render as render_feed
+        render_feed()
     except Exception as e:
-        st.error(f"인사이트 피드 로드 오류: {e}")
+        st.error(f"인사이트 로드 오류: {e}")
 
-with tab_agent:
-    st.markdown(
-        '<div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">'
-        '<span style="color:#6366F1; font-weight:700; font-size:16px;">✦</span>'
-        '<span style="font-size:14px; font-weight:600; opacity:0.5;">'
-        'AI에게 동네에 대해 무엇이든 물어보세요</span></div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        '<div style="font-size:13px; opacity:0.6; margin-bottom:16px;">'
-        '"서초구 반포동 카페 매출 추이 알려줘", "중구에서 가장 유동인구 많은 동네는?", '
-        '"영등포구 핫플 점수 비교해줘"</div>',
-        unsafe_allow_html=True,
-    )
-    st.info("👈 왼쪽 사이드바에서 AI 에이전트와 대화하세요. 사이드바가 닫혀있다면 왼쪽 상단 '>' 버튼을 눌러주세요.")
-
-with tab_twin:
+with tab_future:
     try:
-        from views.디지털_트윈 import render
-        render()
+        from views.디지털_트윈 import render as render_twin
+        render_twin()
     except Exception as e:
-        st.error(f"디지털 트윈 로드 오류: {e}")
+        st.error(f"미래 예측 로드 오류: {e}")

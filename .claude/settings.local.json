@@ -8,7 +8,12 @@
       "Bash(echo \"Exit code: $?\")",
       "Read(//d/park/snowflack/data/아정당/**)",
       "Bash(sort -t'\\(' -k2 -rn)",
-      "Bash(head -1 V06*.csv)"
+      "Bash(head -1 V06*.csv)",
+      "Bash(gh run:*)",
+      "Bash(where gh:*)",
+      "Bash(git ls-tree:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ]
   }
 }
