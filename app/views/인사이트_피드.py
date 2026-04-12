@@ -542,7 +542,9 @@ def render():
         my_city = my_nb.split(" ")[0] if my_nb else ""
         my_short = my_nb.split(" ")[-1] if my_nb else ""
         my_dc = rm[rm["label"] == my_nb]["district_code"].values[0] if my_nb in rm["label"].values else ""
-        same_city_hp = hp[(hp["city"] == my_city) & (hp["STANDARD_YEAR_MONTH"] == latest_month)].sort_values("hotplace_score", ascending=False)
+        # 근처 시그널은 중간 패널 기준월 사용 (내 동네 월은 아직 미정의)
+        _nearby_ym = selected_ym
+        same_city_hp = hp[(hp["city"] == my_city) & (hp["STANDARD_YEAR_MONTH"] == _nearby_ym)].sort_values("hotplace_score", ascending=False)
         my_row_hp = same_city_hp[same_city_hp["DISTRICT_CODE"] == my_dc]
         others_hp = same_city_hp[same_city_hp["DISTRICT_CODE"] != my_dc].head(3)
         nearby_rows = pd.concat([my_row_hp, others_hp])

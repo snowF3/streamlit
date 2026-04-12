@@ -488,9 +488,9 @@ def render():
             with sf1:
                 # 구/동 분리 선택
                 gu_list = sorted(set(n.split(" ")[0] for n in district_labels))
-                sim_gu = st.selectbox("구 선택", gu_list, key="sim_gu")
+                sim_gu = st.selectbox("구 선택", gu_list)
                 dong_in_gu = [n for n in district_labels if n.startswith(sim_gu)]
-                sim_district_label = st.selectbox("동 선택", dong_in_gu, key="sim_dong")
+                sim_district_label = st.selectbox("동 선택", dong_in_gu)
             with sf2:
                 sim_industry = st.selectbox("업종", list(INDUSTRY_PARAMS.keys()))
                 sim_rent = st.slider("예상 월 임대료(만원)", 100, 2000, 500, step=50)
