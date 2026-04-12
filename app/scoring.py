@@ -14,6 +14,89 @@ def normalize_series(s: pd.Series) -> pd.Series:
     return ((s - min_val) / (max_val - min_val)) * 100
 
 
+def calc_derived_metrics(pop_time, card_agg, pop_agg, income_agg, year_month):
+    """
+    파생지표 계산 (디지털 트윈 / 클러스터링 / 프로파일 공용)
+
+    Parameters
+    ----------
+    pop_time   : DataFrame  load_population_time() — 시간대별 유동인구
+    card_agg   : DataFrame  load_card_sales_agg() — 카드매출 집계
+    pop_agg    : DataFrame  load_population_agg() — 유동인구 집계
+    income_agg : DataFrame  load_income_agg() — 소득 집계
+    year_month : int        기준 년월
+
+    Returns
+    -------
+    DataFrame  index=DISTRICT_CODE,
+               columns=[total_pop, day_night_ratio, sales_per_capita,
+                        consumption_hhi, visit_ratio, avg_income]
+    """
+    result = pd.DataFrame()
+    result.index.name = "DISTRICT_CODE"
+
+    # ── 1. total_pop & visit_ratio (유동인구 집계) ──
+    pa = pop_agg[pop_agg["STANDARD_YEAR_MONTH"] == year_month]
+    pa_grp = pa.groupby("DISTRICT_CODE")[
+        ["RESIDENTIAL_POPULATION", "WORKING_POPULATION", "VISITING_POPULATION"]
+    ].sum()
+    pa_grp["total_pop"] = (pa_grp["RESIDENTIAL_POPULATION"]
+                           + pa_grp["WORKING_POPULATION"]
+                           + pa_grp["VISITING_POPULATION"])
+    result["total_pop"] = pa_grp["total_pop"]
+    result["visit_ratio"] = (
+        pa_grp["VISITING_POPULATION"] / pa_grp["total_pop"].replace(0, np.nan)
+    ).fillna(0)
+
+    # ── 2. day_night_ratio (시간대별 유동인구) ──
+    pt = pop_time[pop_time["STANDARD_YEAR_MONTH"] == year_month].copy()
+    pt["_total"] = (pt["RESIDENTIAL_POPULATION"]
+                    + pt["WORKING_POPULATION"]
+                    + pt["VISITING_POPULATION"])
+    DAY_SLOTS = ["T06", "T09", "T12", "T15"]
+    NIGHT_SLOTS = ["T18", "T21", "T24"]
+    day_pop = pt[pt["TIME_SLOT"].isin(DAY_SLOTS)].groupby("DISTRICT_CODE")["_total"].sum()
+    night_pop = pt[pt["TIME_SLOT"].isin(NIGHT_SLOTS)].groupby("DISTRICT_CODE")["_total"].sum()
+    result["day_night_ratio"] = (day_pop / night_pop.replace(0, np.nan)).fillna(1.0)
+
+    # ── 3. sales_per_capita (1인당 매출) ──
+    ca = card_agg[card_agg["STANDARD_YEAR_MONTH"] == year_month]
+    sales_by_dc = ca.groupby("DISTRICT_CODE")["TOTAL_SALES"].sum()
+    result["sales_per_capita"] = (
+        sales_by_dc / result["total_pop"].replace(0, np.nan)
+    ).fillna(0)
+
+    # ── 4. consumption_hhi (소비 집중도, 허핀달-허쉬만 지수) ──
+    SALES_CATS = [
+        "FOOD_SALES", "COFFEE_SALES", "ENTERTAINMENT_SALES",
+        "DEPARTMENT_STORE_SALES", "LARGE_DISCOUNT_STORE_SALES",
+        "SMALL_RETAIL_STORE_SALES", "CLOTHING_ACCESSORIES_SALES",
+        "SPORTS_CULTURE_LEISURE_SALES", "ACCOMMODATION_SALES",
+        "TRAVEL_SALES", "BEAUTY_SALES", "HOME_LIFE_SERVICE_SALES",
+        "EDUCATION_ACADEMY_SALES", "MEDICAL_SALES",
+        "ELECTRONICS_FURNITURE_SALES", "CAR_SALES",
+        "CAR_SERVICE_SUPPLIES_SALES", "GAS_STATION_SALES",
+        "E_COMMERCE_SALES",
+    ]
+    avail_cats = [c for c in SALES_CATS if c in ca.columns]
+    if avail_cats:
+        cat_by_dc = ca.groupby("DISTRICT_CODE")[avail_cats].sum()
+        cat_total = cat_by_dc.sum(axis=1)
+        shares = cat_by_dc.div(cat_total.replace(0, np.nan), axis=0).fillna(0)
+        result["consumption_hhi"] = (shares ** 2).sum(axis=1)
+    else:
+        result["consumption_hhi"] = 0.0
+
+    # ── 5. avg_income (평균 소득) ──
+    ia = income_agg[income_agg["STANDARD_YEAR_MONTH"] == year_month]
+    if "AVERAGE_INCOME" in ia.columns:
+        result["avg_income"] = ia.groupby("DISTRICT_CODE")["AVERAGE_INCOME"].mean()
+    else:
+        result["avg_income"] = 0.0
+
+    return result.fillna(0)
+
+
 def calc_growth_rate(df, value_col, group_col="DISTRICT_CODE", time_col="STANDARD_YEAR_MONTH", recent_months=6):
     """최근 N개월 vs 이전 N개월 증가율 계산"""
     months = sorted(df[time_col].unique())
@@ -153,6 +236,67 @@ def calc_purchasing_power(income_agg):
         scores["purchasing_power"] = 50.0
 
     return scores.set_index("DISTRICT_CODE")["purchasing_power"]
+
+
+def calc_derived_metrics(pop_time_df, card_agg_df, pop_agg_df, income_agg_df, year_month):
+    """
+    디지털 트윈용 파생지표 계산
+
+    Returns: DataFrame indexed by DISTRICT_CODE with columns:
+        total_pop, visit_ratio, day_night_ratio, sales_per_capita, consumption_hhi, avg_income
+    """
+    ym = year_month
+
+    # ── 총 유동인구 + 방문 비중 ──
+    pop_m = pop_agg_df[pop_agg_df["STANDARD_YEAR_MONTH"] == ym].copy()
+    pop_m["total_pop"] = (pop_m["RESIDENTIAL_POPULATION"]
+                          + pop_m["WORKING_POPULATION"]
+                          + pop_m["VISITING_POPULATION"])
+    pop_m["visit_ratio"] = pop_m["VISITING_POPULATION"] / pop_m["total_pop"].replace(0, np.nan)
+    pop_summary = pop_m.set_index("DISTRICT_CODE")[["total_pop", "visit_ratio", "VISITING_POPULATION"]]
+
+    # ── 낮밤 인구비 ──
+    pt = pop_time_df[(pop_time_df["STANDARD_YEAR_MONTH"] == ym)
+                     & (pop_time_df["WEEKDAY_WEEKEND"] == "W")].copy()
+    pt["total"] = pt["RESIDENTIAL_POPULATION"] + pt["WORKING_POPULATION"] + pt["VISITING_POPULATION"]
+    day_slots = ["T06", "T09", "T12"]
+    night_slots = ["T18", "T21", "T24"]
+    day_pop = pt[pt["TIME_SLOT"].isin(day_slots)].groupby("DISTRICT_CODE")["total"].sum()
+    night_pop = pt[pt["TIME_SLOT"].isin(night_slots)].groupby("DISTRICT_CODE")["total"].sum()
+    day_night = (day_pop / night_pop.replace(0, np.nan)).round(2)
+    day_night.name = "day_night_ratio"
+
+    # ── 1인당 매출 ──
+    card_m = card_agg_df[card_agg_df["STANDARD_YEAR_MONTH"] == ym].copy()
+    card_by_dc = card_m.set_index("DISTRICT_CODE")
+    sales_per_cap = (card_by_dc["TOTAL_SALES"] / pop_summary["total_pop"].replace(0, np.nan)).round(0)
+    sales_per_cap.name = "sales_per_capita"
+
+    # ── 소비 집중도 (HHI) ──
+    sales_cols = [c for c in card_m.columns if c.endswith("_SALES") and c != "TOTAL_SALES"]
+    hhi_rows = {}
+    for _, row in card_m.iterrows():
+        dc = row["DISTRICT_CODE"]
+        total = row["TOTAL_SALES"]
+        if total and total > 0:
+            hhi = sum((row[c] / total) ** 2 for c in sales_cols if pd.notna(row[c]))
+            hhi_rows[dc] = round(hhi, 4)
+    hhi_series = pd.Series(hhi_rows, name="consumption_hhi")
+    hhi_series.index.name = "DISTRICT_CODE"
+
+    # ── 평균 소득 ──
+    inc_m = income_agg_df[income_agg_df["STANDARD_YEAR_MONTH"] == ym].copy()
+    avg_income = inc_m.set_index("DISTRICT_CODE")["AVERAGE_INCOME"] if "AVERAGE_INCOME" in inc_m.columns else pd.Series(dtype=float)
+    avg_income.name = "avg_income"
+
+    # ── 병합 ──
+    result = pop_summary[["total_pop", "visit_ratio"]].copy()
+    result = result.join(day_night, how="left")
+    result = result.join(sales_per_cap, how="left")
+    result = result.join(hhi_series, how="left")
+    result = result.join(avg_income, how="left")
+    result = result.fillna(0)
+    return result
 
 
 def calc_monthly_signals(pop_agg, card_agg, region_master,
