@@ -681,10 +681,11 @@ def render():
                     marker_sizes = [10 if lb == curr_label else 3 for lb in trend["label"]]
 
                     fig_trend = go.Figure(go.Scatter(
-                        x=trend["label"], y=trend["cum_score"],
+                        x=trend["label"].tolist(), y=trend["cum_score"].tolist(),
                         mode="lines+markers", line=dict(color="#6366F1", width=2),
                         marker=dict(size=marker_sizes, color=marker_colors),
-                        showlegend=False, name="",
+                        showlegend=False, name="핫플 점수",
+                        hovertemplate='%{x}<br>%{y:.1f}점<extra></extra>',
                     ))
                     if curr_label in trend["label"].values:
                         fig_trend.add_vline(x=curr_label, line_dash="dot", line_color="rgba(240,68,82,0.3)")
